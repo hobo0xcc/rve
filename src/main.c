@@ -35,19 +35,96 @@ int32_t SetNBits(int32_t n) {
 void ExecAddi(State *state, uint32_t instr) {
     uint8_t rd = (instr >> 7) & SetNBits(4);
     uint8_t rs1 = (instr >> 15) & SetNBits(4);
-    uint16_t immediate = (instr >> 20) & SetNBits(11);
+    int32_t immediate = (instr >> 20) & SetNBits(11);
 
     state->x[rd] = state->x[rs1] + immediate;
+}
+
+void ExecSlti(State *state, uint32_t instr) {
+    uint8_t rd = (instr >> 7) & SetNBits(4);
+    uint8_t rs1 = (instr >> 15) & SetNBits(4);
+    int32_t immediate = (instr >> 20) & SetNBits(11);
+
+    state->x[rd] = state->x[rs1] < immediate;
+}
+
+void ExecSltiu(State *state, uint32_t instr) {
+    uint8_t rd = (instr >> 7) & SetNBits(4);
+    uint8_t rs1 = (instr >> 15) & SetNBits(4);
+    int32_t immediate = (instr >> 20) & SetNBits(11);
+
+    state->x[rd] = ((uint32_t) state->x[rs1]) < ((uint32_t) immediate);
+}
+
+void ExecXori(State *state, uint32_t instr) {
+    uint8_t rd = (instr >> 7) & SetNBits(4);
+    uint8_t rs1 = (instr >> 15) & SetNBits(4);
+    int32_t immediate = (instr >> 20) & SetNBits(11);
+
+    state->x[rd] = state->x[rs1] ^ immediate;
+}
+
+void ExecOri(State *state, uint32_t instr) {
+    uint8_t rd = (instr >> 7) & SetNBits(4);
+    uint8_t rs1 = (instr >> 15) & SetNBits(4);
+    int32_t immediate = (instr >> 20) & SetNBits(11);
+
+    state->x[rd] = state->x[rs1] | immediate;
+}
+
+void ExecAndi(State *state, uint32_t instr) {
+    uint8_t rd = (instr >> 7) & SetNBits(4);
+    uint8_t rs1 = (instr >> 15) & SetNBits(4);
+    int32_t immediate = (instr >> 20) & SetNBits(11);
+
+    state->x[rd] = state->x[rs1] & immediate;
+}
+
+void ExecAdd(State *state, uint32_t instr) {
+    uint8_t rd = (instr >> 7) & SetNBits(4);
+    uint8_t rs1 = (instr >> 15) & SetNBits(4);
+    uint8_t rs2 = (instr >> 20) & SetNBits(4);
+
+    state->x[rd] = state->x[rs1] + state->x[rs2];
+}
+
+void ExecRegImmInstr(State *state, uint32_t instr) {
+    uint8_t funct = (instr >> 12) & SetNBits(2);
+    
+    switch (funct) {
+    case 0x0:
+        ExecAddi(state, instr);
+        break;
+    case 0x2:
+        ExecSlti(state, instr);
+        break;
+    case 0x3:
+        ExecSltiu(state, instr);
+        break;
+    case 0x4:
+        ExecXori(state, instr);
+        break;
+    case 0x6:
+        ExecOri(state, instr);
+    case 0x7:
+        ExecAndi(state, instr);
+        break;
+    default:
+        Error("Unknown Register-Immediate instruction: %2x", funct);
+    }
 }
 
 void ExecInstruction(State *state, uint32_t instr) {
     uint8_t opcode = instr & SetNBits(6);
     switch (opcode) {
     case 0x13:
-        ExecAddi(state, instr);
+        ExecRegImmInstr(state, instr);
+        break;
+    case 0x33:
+        ExecAdd(state, instr);
         break;
     default:
-        Error("Unknown opcode: %2x.", opcode);
+        Error("Unknown opcode: 0x%2x.", opcode);
     }
 }
 
@@ -79,6 +156,7 @@ int main(int argc, char **argv) {
     int instr_size = 4;
     for (state->pc = 0; state->pc < size; state->pc += instr_size) {
         ExecInstruction(state, *(uint32_t *)(bin + state->pc));
+        state->x[0] = 0;
     }
 
     int32_t result = state->x[1];
