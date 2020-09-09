@@ -37,9 +37,7 @@ State *NewState() {
     return state;
 }
 
-int32_t SetNBits(int32_t n) {
-    return (1 << n) - 1;
-}
+int32_t SetNBits(int32_t n) { return (1 << n) - 1; }
 
 void ExecAddi(State *state, uint32_t instr) {
     uint8_t rd = (instr >> 7) & SetNBits(5);
@@ -172,6 +170,14 @@ void ExecAdd(State *state, uint32_t instr) {
     state->x[rd] = state->x[rs1] + state->x[rs2];
 }
 
+void ExecMul(State *state, uint32_t instr) {
+    uint8_t rd = (instr >> 7) & SetNBits(5);
+    uint8_t rs1 = (instr >> 15) & SetNBits(5);
+    uint8_t rs2 = (instr >> 20) & SetNBits(5);
+
+    state->x[rd] = state->x[rs1] * state->x[rs2];
+}
+
 void ExecSub(State *state, uint32_t instr) {
     uint8_t rd = (instr >> 7) & SetNBits(5);
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
@@ -188,12 +194,28 @@ void ExecSll(State *state, uint32_t instr) {
     state->x[rd] = state->x[rs1] << state->x[rs2];
 }
 
+void ExecMulh(State *state, uint32_t instr) {
+    uint8_t rd = (instr >> 7) & SetNBits(5);
+    uint8_t rs1 = (instr >> 15) & SetNBits(5);
+    uint8_t rs2 = (instr >> 20) & SetNBits(5);
+
+    state->x[rd] = ((int64_t)state->x[rs1] * (int64_t)state->x[rs2]) >> 32;
+}
+
 void ExecSlt(State *state, uint32_t instr) {
     uint8_t rd = (instr >> 7) & SetNBits(5);
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
     state->x[rd] = state->x[rs1] < state->x[rs2];
+}
+
+void ExecMulhsu(State *state, uint32_t instr) {
+    uint8_t rd = (instr >> 7) & SetNBits(5);
+    uint8_t rs1 = (instr >> 15) & SetNBits(5);
+    uint8_t rs2 = (instr >> 20) & SetNBits(5);
+
+    state->x[rd] = ((int64_t)state->x[rs1] * (uint64_t)state->x[rs2]) >> 32;
 }
 
 void ExecSltu(State *state, uint32_t instr) {
@@ -204,12 +226,28 @@ void ExecSltu(State *state, uint32_t instr) {
     state->x[rd] = ((uint32_t)state->x[rs1]) < ((uint32_t)state->x[rs2]);
 }
 
+void ExecMulhu(State *state, uint32_t instr) {
+    uint8_t rd = (instr >> 7) & SetNBits(5);
+    uint8_t rs1 = (instr >> 15) & SetNBits(5);
+    uint8_t rs2 = (instr >> 20) & SetNBits(5);
+
+    state->x[rd] = ((uint64_t)state->x[rs1] * (uint64_t)state->x[rs2]) >> 32;
+}
+
 void ExecXor(State *state, uint32_t instr) {
     uint8_t rd = (instr >> 7) & SetNBits(5);
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
     state->x[rd] = state->x[rs1] ^ state->x[rs2];
+}
+
+void ExecDiv(State *state, uint32_t instr) {
+    uint8_t rd = (instr >> 7) & SetNBits(5);
+    uint8_t rs1 = (instr >> 15) & SetNBits(5);
+    uint8_t rs2 = (instr >> 20) & SetNBits(5);
+
+    state->x[rd] = state->x[rs1] / state->x[rs2];
 }
 
 void ExecSrl(State *state, uint32_t instr) {
@@ -220,6 +258,14 @@ void ExecSrl(State *state, uint32_t instr) {
     // In RV64I, Use SetNBits(6).
     state->x[rd] =
         ((uint32_t)state->x[rs1]) >> ((uint32_t)(state->x[rs2] & SetNBits(5)));
+}
+
+void ExecDivu(State *state, uint32_t instr) {
+    uint8_t rd = (instr >> 7) & SetNBits(5);
+    uint8_t rs1 = (instr >> 15) & SetNBits(5);
+    uint8_t rs2 = (instr >> 20) & SetNBits(5);
+
+    state->x[rd] = (uint32_t)state->x[rs1] / (uint32_t)state->x[rs2];
 }
 
 void ExecSra(State *state, uint32_t instr) {
@@ -239,12 +285,28 @@ void ExecOr(State *state, uint32_t instr) {
     state->x[rd] = state->x[rs1] | state->x[rs2];
 }
 
+void ExecRem(State *state, uint32_t instr) {
+    uint8_t rd = (instr >> 7) & SetNBits(5);
+    uint8_t rs1 = (instr >> 15) & SetNBits(5);
+    uint8_t rs2 = (instr >> 20) & SetNBits(5);
+
+    state->x[rd] = state->x[rs1] % state->x[rs2];
+}
+
 void ExecAnd(State *state, uint32_t instr) {
     uint8_t rd = (instr >> 7) & SetNBits(5);
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
     state->x[rd] = state->x[rs1] & state->x[rs2];
+}
+
+void ExecRemu(State *state, uint32_t instr) {
+    uint8_t rd = (instr >> 7) & SetNBits(5);
+    uint8_t rs1 = (instr >> 15) & SetNBits(5);
+    uint8_t rs2 = (instr >> 20) & SetNBits(5);
+
+    state->x[rd] = (uint32_t)state->x[rs1] % (uint32_t)state->x[rs2];
 }
 
 void ExecOpInstr(State *state, uint32_t instr) {
@@ -255,34 +317,62 @@ void ExecOpInstr(State *state, uint32_t instr) {
     case 0x0:
         if (funct7 == 0x00) {
             ExecAdd(state, instr);
+        } else if (funct7 == 0x01) {
+            ExecMul(state, instr);
         } else if (funct7 == 0x20) {
             ExecSub(state, instr);
         }
         break;
     case 0x1:
-        ExecSll(state, instr);
+        if (funct7 == 0x00) {
+            ExecSll(state, instr);
+        } else if (funct7 == 0x01) {
+            ExecMulh(state, instr);
+        }
         break;
     case 0x2:
-        ExecSlt(state, instr);
+        if (funct7 == 0x00) {
+            ExecSlt(state, instr);
+        } else if (funct7 == 0x02) {
+            ExecMulhsu(state, instr);
+        }
         break;
     case 0x3:
-        ExecSltu(state, instr);
+        if (funct7 == 0x00) {
+            ExecSltu(state, instr);
+        } else if (funct7 == 0x01) {
+            ExecMulhu(state, instr);
+        }
         break;
     case 0x4:
-        ExecXor(state, instr);
+        if (funct7 == 0x00) {
+            ExecXor(state, instr);
+        } else if (funct7 == 0x01) {
+            ExecDiv(state, instr);
+        }
         break;
     case 0x5:
         if (funct7 == 0x00) {
             ExecSrl(state, instr);
+        } else if (funct7 == 0x01) {
+            ExecDivu(state, instr);
         } else if (funct7 == 0x20) {
             ExecSra(state, instr);
         }
         break;
     case 0x6:
-        ExecOr(state, instr);
+        if (funct7 == 0x00) {
+            ExecOr(state, instr);
+        } else if (funct7 == 0x01) {
+            ExecRem(state, instr);
+        }
         break;
     case 0x7:
-        ExecAnd(state, instr);
+        if (funct7 == 0x00) {
+            ExecAnd(state, instr);
+        } else if (funct7 == 0x01) {
+            ExecRemu(state, instr);
+        }
         break;
     }
 }
@@ -604,6 +694,7 @@ int main(int argc, char **argv) {
     int32_t result = state->x[1];
 
     free(bin);
+    free(state->mem);
     free(state);
     return result;
 }

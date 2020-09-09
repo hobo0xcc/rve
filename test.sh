@@ -43,6 +43,9 @@ run_test jal-1.bin 4
 run_test jalr-1.bin 8
 run_test lb-1.bin 20
 run_test beq-1.bin 42
+run_test mul-1.bin 42
+run_test div-1.bin 21
+run_test rem-1.bin 1
 
 cd test
 make clean &> /dev/null
