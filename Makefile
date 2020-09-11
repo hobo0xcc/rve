@@ -1,6 +1,6 @@
 LD:=gcc
 CC:=gcc
-CCFLAGS:=-std=c11
+CCFLAGS:=-std=c11 -g
 RM:=rm -rf
 MKDIR:=mkdir -p
 SRC:=$(wildcard src/*.c)

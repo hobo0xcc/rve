@@ -10,7 +10,7 @@ $(BIN): $(OBJ)
 	$(foreach obj, $(OBJ), $(eval $(shell $(RISCVOBJCOPY) -O binary $(obj) $(obj:.o=.bin))))
 
 $(OBJ): $(SRC)
-	$(foreach src, $(SRC), $(eval $(shell $(RISCVAS) -o $(src:.s=.o) $(src))))
+	$(foreach src, $(SRC), $(eval $(shell $(RISCVAS) -march=rv64g -o $(src:.s=.o) $(src))))
 
 clean:
 	$(RM) *.o *.bin
