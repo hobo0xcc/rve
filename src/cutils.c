@@ -10,11 +10,14 @@ Vec *CreateVec() {
 
 void GrowVec(Vec *v, int n) {
     int size = (v->len + n) * sizeof(void *);
-    if (v->cap >= size) return;
+    if (v->cap >= size)
+        return;
 
-    while (v->cap < size) v->cap *= 2;
+    while (v->cap < size)
+        v->cap *= 2;
     v->data = realloc(v->data, v->cap);
-    if (v->data == NULL) Error("Failed to allocate memory");
+    if (v->data == NULL)
+        Error("Failed to allocate memory");
 }
 
 void PushVec(Vec *v, void *item) {

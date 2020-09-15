@@ -3,7 +3,7 @@
 
 uint64_t LoadElf(State *state, size_t size, uint8_t *bin) {
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)bin;
- 
+
     if (memcmp(ehdr->e_ident, ELFMAG, SELFMAG)) {
         Error("Not an Elf file");
     } else if (ehdr->e_type != ET_EXEC) {
@@ -11,7 +11,8 @@ uint64_t LoadElf(State *state, size_t size, uint8_t *bin) {
     }
 
     uint64_t sh_size = sizeof(Elf64_Shdr);
-    Elf64_Shdr *shstrtab = (Elf64_Shdr *)(bin + ehdr->e_shoff + (sh_size * ehdr->e_shstrndx));
+    Elf64_Shdr *shstrtab =
+        (Elf64_Shdr *)(bin + ehdr->e_shoff + (sh_size * ehdr->e_shstrndx));
 
     char *strtab = (char *)(bin + shstrtab->sh_offset);
 
@@ -20,7 +21,8 @@ uint64_t LoadElf(State *state, size_t size, uint8_t *bin) {
         Elf64_Shdr *shdr = (Elf64_Shdr *)(bin + ehdr->e_shoff + i);
         if (shdr->sh_type == SHT_PROGBITS) {
             uint64_t virtual_addr = shdr->sh_addr;
-            if (virtual_addr == 0) continue;
+            if (virtual_addr == 0)
+                continue;
 
             uint8_t *text = (uint8_t *)(bin + shdr->sh_offset);
             size_t text_size = shdr->sh_size;

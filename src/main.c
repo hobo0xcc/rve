@@ -1,9 +1,9 @@
+#include "rve.h"
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "rve.h"
 
 void Error(const char *fmt, ...) {
     va_list ap;
@@ -21,7 +21,8 @@ State *NewState(size_t mem_size) {
     return state;
 }
 
-void LoadBinaryIntoMemory(State *state, uint8_t *bin, size_t bin_size, uint64_t load_addr) {
+void LoadBinaryIntoMemory(State *state, uint8_t *bin, size_t bin_size,
+                          uint64_t load_addr) {
     memcpy(state->mem + load_addr, bin, bin_size);
 }
 
@@ -43,7 +44,7 @@ size_t ReadBinaryFile(const char *name, uint8_t **buf) {
 }
 
 void CPUMain(State *state, uint64_t start_addr, size_t code_size) {
-    for (state->pc = start_addr; state->pc < start_addr + code_size; ) {
+    for (state->pc = start_addr; state->pc < start_addr + code_size;) {
         ExecInstruction(state, *(uint32_t *)(state->mem + state->pc));
         state->x[0] = 0;
     }
@@ -71,7 +72,7 @@ int main(int argc, char **argv) {
     CPUMain(state, addr, size);
 
     PrintRegisters(state);
-    int32_t result = state->x[10]; 
+    int32_t result = state->x[10];
 
     free(bin);
     free(state->mem);

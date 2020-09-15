@@ -2,9 +2,7 @@
 
 int64_t SetNBits(int32_t n) { return ((uint64_t)1 << n) - 1; }
 
-int64_t SetOneBit(int i) {
-    return (1 << i);
-}
+int64_t SetOneBit(int i) { return (1 << i); }
 
 int64_t Sext(int64_t i, int top_bit) {
     if (i & SetOneBit(top_bit)) {
@@ -360,11 +358,11 @@ void ExecOpInstr(State *state, uint32_t instr) {
 
 void ExecJal(State *state, uint32_t instr) {
     uint8_t rd = (instr >> 7) & SetNBits(5);
-    int32_t offset = Sext(
-            (instr >> 31 & SetNBits(1)) << 20 |
-            (instr >> 12 & SetNBits(8)) << 12 |
-            (instr >> 20 & SetNBits(1)) << 11 |
-            (instr >> 21 & SetNBits(10)) << 1, 20);
+    int32_t offset = Sext((instr >> 31 & SetNBits(1)) << 20 |
+                              (instr >> 12 & SetNBits(8)) << 12 |
+                              (instr >> 20 & SetNBits(1)) << 11 |
+                              (instr >> 21 & SetNBits(10)) << 1,
+                          20);
 
     state->x[rd] = state->pc + sizeof(instr);
     state->pc += offset;
@@ -469,8 +467,8 @@ void ExecLoadInstr(State *state, uint32_t instr) {
 void ExecSb(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
-    int32_t offset =
-        Sext(((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
+    int32_t offset = Sext(
+        ((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
 
     *(uint8_t *)(state->mem + state->x[rs1] + offset) =
         (uint8_t)(state->x[rs2] & SetNBits(8));
@@ -479,8 +477,8 @@ void ExecSb(State *state, uint32_t instr) {
 void ExecSh(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
-    int32_t offset =
-        Sext(((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
+    int32_t offset = Sext(
+        ((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
 
     *(uint16_t *)(state->mem + state->x[rs1] + offset) =
         (uint16_t)(state->x[rs2] & SetNBits(16));
@@ -489,8 +487,8 @@ void ExecSh(State *state, uint32_t instr) {
 void ExecSw(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
-    int32_t offset =
-        Sext(((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
+    int32_t offset = Sext(
+        ((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
 
     *(uint32_t *)(state->mem + state->x[rs1] + offset) =
         (uint32_t)state->x[rs2];
@@ -499,8 +497,8 @@ void ExecSw(State *state, uint32_t instr) {
 void ExecSd(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
-    int32_t offset =
-        Sext(((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
+    int32_t offset = Sext(
+        ((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
 
     *(uint64_t *)(state->mem + state->x[rs1] + offset) =
         (uint64_t)state->x[rs2];
@@ -531,9 +529,10 @@ void ExecBeq(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
     int32_t offset = Sext(((instr >> 31 & SetNBits(1)) << 12) |
-                     ((instr >> 7 & SetNBits(1)) << 11) |
-                     ((instr >> 25 & SetNBits(6)) << 5) |
-                     ((instr >> 8 & SetNBits(4)) << 1), 12);
+                              ((instr >> 7 & SetNBits(1)) << 11) |
+                              ((instr >> 25 & SetNBits(6)) << 5) |
+                              ((instr >> 8 & SetNBits(4)) << 1),
+                          12);
 
     if (state->x[rs1] == state->x[rs2])
         state->pc += offset;
@@ -545,9 +544,10 @@ void ExecBne(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
     int32_t offset = Sext(((instr >> 31 & SetNBits(1)) << 12) |
-                     ((instr >> 7 & SetNBits(1)) << 11) |
-                     ((instr >> 25 & SetNBits(6)) << 5) |
-                     ((instr >> 8 & SetNBits(4)) << 1), 12);
+                              ((instr >> 7 & SetNBits(1)) << 11) |
+                              ((instr >> 25 & SetNBits(6)) << 5) |
+                              ((instr >> 8 & SetNBits(4)) << 1),
+                          12);
 
     if (state->x[rs1] != state->x[rs2])
         state->pc += offset;
@@ -559,9 +559,10 @@ void ExecBlt(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
     int32_t offset = Sext(((instr >> 31 & SetNBits(1)) << 12) |
-                     ((instr >> 7 & SetNBits(1)) << 11) |
-                     ((instr >> 25 & SetNBits(6)) << 5) |
-                     ((instr >> 8 & SetNBits(4)) << 1), 12);
+                              ((instr >> 7 & SetNBits(1)) << 11) |
+                              ((instr >> 25 & SetNBits(6)) << 5) |
+                              ((instr >> 8 & SetNBits(4)) << 1),
+                          12);
 
     if (state->x[rs1] < state->x[rs2])
         state->pc += offset;
@@ -573,9 +574,10 @@ void ExecBge(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
     int32_t offset = Sext(((instr >> 31 & SetNBits(1)) << 12) |
-                     ((instr >> 7 & SetNBits(1)) << 11) |
-                     ((instr >> 25 & SetNBits(6)) << 5) |
-                     ((instr >> 8 & SetNBits(4)) << 1), 12);
+                              ((instr >> 7 & SetNBits(1)) << 11) |
+                              ((instr >> 25 & SetNBits(6)) << 5) |
+                              ((instr >> 8 & SetNBits(4)) << 1),
+                          12);
 
     if (state->x[rs1] >= state->x[rs2])
         state->pc += offset;
@@ -587,9 +589,10 @@ void ExecBltu(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
     int32_t offset = Sext(((instr >> 31 & SetNBits(1)) << 12) |
-                     ((instr >> 7 & SetNBits(1)) << 11) |
-                     ((instr >> 25 & SetNBits(6)) << 5) |
-                     ((instr >> 8 & SetNBits(4)) << 1), 12);
+                              ((instr >> 7 & SetNBits(1)) << 11) |
+                              ((instr >> 25 & SetNBits(6)) << 5) |
+                              ((instr >> 8 & SetNBits(4)) << 1),
+                          12);
 
     if ((uint64_t)state->x[rs1] < (uint64_t)state->x[rs2])
         state->pc += offset;
@@ -601,9 +604,10 @@ void ExecBgeu(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
     int32_t offset = Sext(((instr >> 31 & SetNBits(1)) << 12) |
-                     ((instr >> 7 & SetNBits(1)) << 11) |
-                     ((instr >> 25 & SetNBits(6)) << 5) |
-                     ((instr >> 8 & SetNBits(4)) << 1), 12);
+                              ((instr >> 7 & SetNBits(1)) << 11) |
+                              ((instr >> 25 & SetNBits(6)) << 5) |
+                              ((instr >> 8 & SetNBits(4)) << 1),
+                          12);
 
     if ((uint64_t)state->x[rs1] >= (uint64_t)state->x[rs2])
         state->pc += offset;
@@ -659,7 +663,8 @@ void ExecSrliw(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t immediate = (instr >> 20) & SetNBits(5);
 
-    state->x[rd] = Sext((uint64_t)(state->x[rs1] & SetNBits(32)) >> immediate, 31);
+    state->x[rd] =
+        Sext((uint64_t)(state->x[rs1] & SetNBits(32)) >> immediate, 31);
 }
 
 void ExecSraiw(State *state, uint32_t instr) {
@@ -720,7 +725,8 @@ void ExecSllw(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
-    state->x[rd] = Sext((uint32_t)(state->x[rs1] << state->x[rs2]) & SetNBits(32), 31);
+    state->x[rd] =
+        Sext((uint32_t)(state->x[rs1] << state->x[rs2]) & SetNBits(32), 31);
 }
 
 void ExecDivw(State *state, uint32_t instr) {
@@ -744,7 +750,8 @@ void ExecSraw(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
-    state->x[rd] = Sext((state->x[rs1] & SetNBits(32)) >> (rs2 & SetNBits(5)), 31);
+    state->x[rd] =
+        Sext((state->x[rs1] & SetNBits(32)) >> (rs2 & SetNBits(5)), 31);
 }
 
 void ExecRemw(State *state, uint32_t instr) {
@@ -760,7 +767,8 @@ void ExecRemuw(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
-    state->x[rd] = Sext((state->x[rs1] & SetNBits(32)) % (state->x[rs2] & SetNBits(32)), 31);
+    state->x[rd] = Sext(
+        (state->x[rs1] & SetNBits(32)) % (state->x[rs2] & SetNBits(32)), 31);
 }
 
 void ExecOp32Instr(State *state, uint32_t instr) {
@@ -818,17 +826,18 @@ void ExecCLw(State *state, uint16_t instr) {
     uint8_t rs1 = (instr >> 7) & SetNBits(3);
     uint8_t rd = (instr >> 2) & SetNBits(3);
 
-    state->x[8 + rd] = Sext(*(int32_t *)(state->mem + state->x[8 + rs1] + uimm), 31);
+    state->x[8 + rd] =
+        Sext(*(int32_t *)(state->mem + state->x[8 + rs1] + uimm), 31);
 }
 
 void ExecCLd(State *state, uint32_t instr) {
-    uint8_t uimm = 
-        ((instr >> 5 & SetNBits(2)) << 6) |
-        ((instr >> 10 & SetNBits(3)) << 3);
+    uint8_t uimm =
+        ((instr >> 5 & SetNBits(2)) << 6) | ((instr >> 10 & SetNBits(3)) << 3);
     uint8_t rs1 = instr >> 7 & SetNBits(3);
     uint8_t rd = instr >> 2 & SetNBits(3);
 
-    state->x[8 + rd] = Sext(*(int64_t *)(state->mem + state->x[8 + rs1] + uimm), 31);
+    state->x[8 + rd] =
+        Sext(*(int64_t *)(state->mem + state->x[8 + rs1] + uimm), 31);
 }
 
 void ExecCSw(State *state, uint16_t instr) {
@@ -853,8 +862,8 @@ void ExecCSd(State *state, uint32_t instr) {
 }
 
 void ExecCAddi(State *state, uint16_t instr) {
-    int32_t imm =
-        Sext(((instr >> 12 & SetNBits(1)) << 5) | (instr >> 2 & SetNBits(5)), 5);
+    int32_t imm = Sext(
+        ((instr >> 12 & SetNBits(1)) << 5) | (instr >> 2 & SetNBits(5)), 5);
 
     if (imm == 0) {
         Error("Invalid c.addi immediate");
@@ -865,16 +874,16 @@ void ExecCAddi(State *state, uint16_t instr) {
 }
 
 void ExecCAddiw(State *state, uint16_t instr) {
-    int32_t imm =
-        Sext(((instr >> 12 & SetNBits(1)) << 5) | ((instr >> 2) & SetNBits(5)), 5);
+    int32_t imm = Sext(
+        ((instr >> 12 & SetNBits(1)) << 5) | ((instr >> 2) & SetNBits(5)), 5);
     uint8_t rd = (instr >> 7) & SetNBits(5);
 
     state->x[rd] = (int32_t)((state->x[rd] + imm) & SetNBits(32));
 }
 
 void ExecCLi(State *state, uint16_t instr) {
-    int32_t imm =
-        Sext(((instr >> 12 & SetNBits(1)) << 5) | (instr >> 2 & SetNBits(5)), 5);
+    int32_t imm = Sext(
+        ((instr >> 12 & SetNBits(1)) << 5) | (instr >> 2 & SetNBits(5)), 5);
     uint8_t rd = (instr >> 7) & SetNBits(5);
 
     state->x[rd] = imm;
@@ -882,17 +891,19 @@ void ExecCLi(State *state, uint16_t instr) {
 
 void ExecCAddi16sp(State *state, uint16_t instr) {
     int32_t imm_t = (instr >> 2) & SetNBits(5);
-    int32_t imm =
-        Sext(((instr >> 12 & SetNBits(1)) << 9) | ((imm_t >> 1 & SetNBits(2)) << 7) |
-        ((imm_t >> 3 & SetNBits(1)) << 6) | ((imm_t & SetNBits(1)) << 5) |
-        ((imm_t >> 4 & SetNBits(1)) << 4), 9);
+    int32_t imm = Sext(
+        ((instr >> 12 & SetNBits(1)) << 9) | ((imm_t >> 1 & SetNBits(2)) << 7) |
+            ((imm_t >> 3 & SetNBits(1)) << 6) | ((imm_t & SetNBits(1)) << 5) |
+            ((imm_t >> 4 & SetNBits(1)) << 4),
+        9);
 
     state->x[2] = state->x[2] + imm;
 }
 
 void ExecCLui(State *state, uint16_t instr) {
     int32_t imm = Sext(((instr >> 12 & SetNBits(1)) << 17) |
-                  ((instr >> 2) & SetNBits(5) << 12), 17);
+                           ((instr >> 2) & SetNBits(5) << 12),
+                       17);
     uint8_t rd = (instr >> 7) & SetNBits(5);
 
     if (imm == 0)
@@ -918,8 +929,8 @@ void ExecCSrai(State *state, uint16_t instr) {
 }
 
 void ExecCAndi(State *state, uint16_t instr) {
-    int32_t imm =
-        Sext(((instr >> 12 & SetNBits(1)) << 5) | ((instr >> 2) & SetNBits(5)), 5);
+    int32_t imm = Sext(
+        ((instr >> 12 & SetNBits(1)) << 5) | ((instr >> 2) & SetNBits(5)), 5);
     uint8_t rd = (instr >> 7) & SetNBits(3);
 
     state->x[8 + rd] = state->x[8 + rd] & imm;
@@ -928,23 +939,27 @@ void ExecCAndi(State *state, uint16_t instr) {
 void ExecCJ(State *state, uint16_t instr) {
     uint32_t imm_t = (instr >> 2);
     // [11|4|9:8|10|6|7|3:1|5] = [10|9|8:7|6|5|4|3:1|0]
-    int32_t imm =
-        Sext(
-        ((imm_t >> 10 & SetNBits(1)) << 11) |
-        ((imm_t >> 6 & SetNBits(1)) << 10) | ((imm_t >> 7 & SetNBits(2)) << 8) |
-        ((imm_t >> 4 & SetNBits(1)) << 7) | ((imm_t >> 5 & SetNBits(1)) << 6) |
-        ((imm_t >> 0 & SetNBits(1)) << 5) | ((imm_t >> 9 & SetNBits(1)) << 4) |
-        ((imm_t >> 1 & SetNBits(3)) << 1), 11);
+    int32_t imm = Sext(((imm_t >> 10 & SetNBits(1)) << 11) |
+                           ((imm_t >> 6 & SetNBits(1)) << 10) |
+                           ((imm_t >> 7 & SetNBits(2)) << 8) |
+                           ((imm_t >> 4 & SetNBits(1)) << 7) |
+                           ((imm_t >> 5 & SetNBits(1)) << 6) |
+                           ((imm_t >> 0 & SetNBits(1)) << 5) |
+                           ((imm_t >> 9 & SetNBits(1)) << 4) |
+                           ((imm_t >> 1 & SetNBits(3)) << 1),
+                       11);
 
     state->pc += imm;
 }
 
 void ExecCBeqz(State *state, uint16_t instr) {
     uint8_t rs1 = (instr >> 7) & SetNBits(3);
-    int32_t imm =
-        Sext(((instr >> 12 & SetNBits(1)) << 8) | ((instr >> 4 & SetNBits(2)) << 6) |
-        ((instr >> 2 & SetNBits(1)) << 5) | ((instr >> 10 & SetNBits(2)) << 3) |
-        ((instr >> 3 & SetNBits(2)) << 1), 8);
+    int32_t imm = Sext(((instr >> 12 & SetNBits(1)) << 8) |
+                           ((instr >> 4 & SetNBits(2)) << 6) |
+                           ((instr >> 2 & SetNBits(1)) << 5) |
+                           ((instr >> 10 & SetNBits(2)) << 3) |
+                           ((instr >> 3 & SetNBits(2)) << 1),
+                       8);
 
     imm <<= 1;
 
@@ -954,10 +969,12 @@ void ExecCBeqz(State *state, uint16_t instr) {
 
 void ExecCBnez(State *state, uint16_t instr) {
     uint8_t rs1 = (instr >> 7) & SetNBits(3);
-    int32_t imm =
-        Sext(((instr >> 12 & SetNBits(1)) << 8) | ((instr >> 4 & SetNBits(2)) << 6) |
-        ((instr >> 2 & SetNBits(1)) << 5) | ((instr >> 10 & SetNBits(2)) << 3) |
-        ((instr >> 3 & SetNBits(2)) << 1), 8);
+    int32_t imm = Sext(((instr >> 12 & SetNBits(1)) << 8) |
+                           ((instr >> 4 & SetNBits(2)) << 6) |
+                           ((instr >> 2 & SetNBits(1)) << 5) |
+                           ((instr >> 10 & SetNBits(2)) << 3) |
+                           ((instr >> 3 & SetNBits(2)) << 1),
+                       8);
 
     imm <<= 1;
 
@@ -997,14 +1014,16 @@ void ExecCSubw(State *state, uint16_t instr) {
     uint8_t rd = instr >> 7 & SetNBits(3);
     uint8_t rs2 = instr >> 2 & SetNBits(3);
 
-    state->x[8 + rd] = Sext((state->x[8 + rd] - state->x[8 + rs2]) & SetNBits(32), 31);
+    state->x[8 + rd] =
+        Sext((state->x[8 + rd] - state->x[8 + rs2]) & SetNBits(32), 31);
 }
 
 void ExecCAddw(State *state, uint16_t instr) {
     uint8_t rd = instr >> 7 & SetNBits(3);
     uint8_t rs2 = instr >> 2 & SetNBits(3);
 
-    state->x[8 + rd] = Sext((state->x[8 + rd] + state->x[8 + rs2]) & SetNBits(32), 31);
+    state->x[8 + rd] =
+        Sext((state->x[8 + rd] + state->x[8 + rs2]) & SetNBits(32), 31);
 }
 
 void ExecCSlli(State *state, uint16_t instr) {
@@ -1026,10 +1045,9 @@ void ExecCLwsp(State *state, uint16_t instr) {
 
 void ExecCLdsp(State *state, uint32_t instr) {
     uint8_t rd = instr >> 7 & SetNBits(5);
-    uint32_t uimm =
-            (instr >> 2 & SetNBits(3)) << 6 |
-            (instr >> 12 & SetNBits(1)) << 5 |
-            (instr >> 5 & SetNBits(2)) << 3;
+    uint32_t uimm = (instr >> 2 & SetNBits(3)) << 6 |
+                    (instr >> 12 & SetNBits(1)) << 5 |
+                    (instr >> 5 & SetNBits(2)) << 3;
 
     state->x[rd] = *(uint64_t *)(state->mem + state->x[2] + uimm);
 }
@@ -1073,8 +1091,7 @@ void ExecCSwsp(State *state, uint16_t instr) {
 void ExecCSdsp(State *state, uint32_t instr) {
     uint8_t rs2 = instr >> 2 & SetNBits(5);
     uint32_t uimm =
-        (instr >> 7 & SetNBits(3)) << 6 |
-        (instr >> 10 & SetNBits(3)) << 3;
+        (instr >> 7 & SetNBits(3)) << 6 | (instr >> 10 & SetNBits(3)) << 3;
 
     *(int64_t *)(state->mem + state->x[2] + uimm) = state->x[rs2];
 }
@@ -1118,8 +1135,9 @@ void ExecCompressedInstr(State *state, uint16_t instr) {
     } break;
     case 0x1: {
         uint8_t r1 = (instr >> 7) & SetNBits(3);
-        int32_t immediate =
-            Sext(((instr >> 2) & SetNBits(5)) | ((instr >> 12 & SetNBits(1)) << 5), 5);
+        int32_t immediate = Sext(((instr >> 2) & SetNBits(5)) |
+                                     ((instr >> 12 & SetNBits(1)) << 5),
+                                 5);
         uint8_t funct3 = (instr >> 13) & SetNBits(3);
         uint8_t funct2_1 = (instr >> 10) & SetNBits(2);
         uint8_t funct2_2 = (instr >> 5) & SetNBits(2);
@@ -1128,7 +1146,7 @@ void ExecCompressedInstr(State *state, uint16_t instr) {
         if (funct6 == 0x23 && funct2_2 == 0x0) {
             ExecCSub(state, instr);
             state->pc += 2;
-        }  else if (funct6 == 0x23 && funct2_2 == 0x1) {
+        } else if (funct6 == 0x23 && funct2_2 == 0x1) {
             ExecCXor(state, instr);
             state->pc += 2;
         } else if (funct6 == 0x23 && funct2_2 == 0x2) {
@@ -1288,7 +1306,7 @@ void ExecCsrrci(State *state, uint32_t instr) {
     uint8_t rd = instr >> 7 & SetNBits(5);
     uint8_t zimm = instr >> 15 & SetNBits(5);
     uint32_t csr = instr >> 20 & SetNBits(12);
-    
+
     int64_t t = state->csr[csr];
     state->csr[csr] = t & ~zimm;
     state->x[rd] = t;
@@ -1298,17 +1316,16 @@ void ExecSystemInstr(State *state, uint32_t instr) {
     uint8_t funct3 = instr >> 12 & SetNBits(3);
 
     switch (funct3) {
-    case 0x0:
-        {
-            uint32_t funct7 = instr >> 20 & SetNBits(12);
-            if (funct7 == 0x00) {
-                ExecEcall(state, instr);
-            } else if (funct7 == 0x01) {
-                ExecEbreak(state, instr);
-            }
+    case 0x0: {
+        uint32_t funct7 = instr >> 20 & SetNBits(12);
+        if (funct7 == 0x00) {
+            ExecEcall(state, instr);
+        } else if (funct7 == 0x01) {
+            ExecEbreak(state, instr);
         }
+    }
 
-        break;
+    break;
     case 0x1:
         ExecCsrrw(state, instr);
         break;

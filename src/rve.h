@@ -1,9 +1,9 @@
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 
 #define XLEN 64
 
@@ -47,7 +47,8 @@ void GrowVec(Vec *v, int n);
 void PushVec(Vec *v, void *item);
 void *GetVec(Vec *v, int idx);
 
-void LoadBinaryIntoMemory(State *state, uint8_t *bin, size_t bin_size, uint64_t load_addr);
+void LoadBinaryIntoMemory(State *state, uint8_t *bin, size_t bin_size,
+                          uint64_t load_addr);
 uint64_t LoadElf(State *state, size_t size, uint8_t *bin);
 void ExecInstruction(State *state, uint32_t instr);
 void Error(const char *fmt, ...);
