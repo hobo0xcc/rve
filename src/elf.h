@@ -1631,18 +1631,20 @@ typedef struct {
 #define DT_MIPS_OPTIONS 0x70000029   /* Address of .options.  */
 #define DT_MIPS_INTERFACE 0x7000002a /* Address of .interface.  */
 #define DT_MIPS_DYNSTR_ALIGN 0x7000002b
-#define DT_MIPS_INTERFACE_SIZE 0x7000002c /* Size of the .interface section.   \
-                                           */
+#define DT_MIPS_INTERFACE_SIZE                                                 \
+    0x7000002c /* Size of the .interface section.                              \
+                */
 #define DT_MIPS_RLD_TEXT_RESOLVE_ADDR                                          \
     0x7000002d /* Address of rld_text_rsolve                                   \
                   function stored in GOT.  */
 #define DT_MIPS_PERF_SUFFIX                                                    \
-    0x7000002e                          /* Default suffix of dso to be added   \
-                                           by rld on dlopen() calls.  */
-#define DT_MIPS_COMPACT_SIZE 0x7000002f /* (O32)Size of compact rel section.   \
-                                         */
-#define DT_MIPS_GP_VALUE 0x70000030     /* GP value for aux GOTs.  */
-#define DT_MIPS_AUX_DYNAMIC 0x70000031  /* Address of aux .dynamic.  */
+    0x7000002e /* Default suffix of dso to be added                            \
+                  by rld on dlopen() calls.  */
+#define DT_MIPS_COMPACT_SIZE                                                   \
+    0x7000002f                         /* (O32)Size of compact rel section.    \
+                                        */
+#define DT_MIPS_GP_VALUE 0x70000030    /* GP value for aux GOTs.  */
+#define DT_MIPS_AUX_DYNAMIC 0x70000031 /* Address of aux .dynamic.  */
 /* The address of .got.plt in an executable using the new non-PIC ABI.  */
 #define DT_MIPS_PLTGOT 0x70000032
 /* The base of the PLT in an executable using the new non-PIC ABI if that

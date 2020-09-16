@@ -813,11 +813,9 @@ void ExecOp32Instr(State *state, uint32_t instr) {
 }
 
 void ExecCAddi4spn(State *state, uint16_t instr) {
-    uint32_t uimm = 
-        ((instr >> 7 & SetNBits(4)) << 6) |
-        ((instr >> 11 & SetNBits(2)) << 4) |
-        ((instr >> 5 & SetNBits(1)) << 3) |
-        ((instr >> 6 & SetNBits(1)) << 2);
+    uint32_t uimm =
+        ((instr >> 7 & SetNBits(4)) << 6) | ((instr >> 11 & SetNBits(2)) << 4) |
+        ((instr >> 5 & SetNBits(1)) << 3) | ((instr >> 6 & SetNBits(1)) << 2);
     int8_t rd = (instr >> 2) & SetNBits(3);
 
     state->x[8 + rd] = state->x[2] + uimm;
@@ -851,8 +849,7 @@ void ExecCSw(State *state, uint16_t instr) {
     uint8_t rs1 = (instr >> 7) & SetNBits(3);
     uint8_t rs2 = (instr >> 2) & SetNBits(3);
 
-    *(uint32_t *)(state->mem + state->x[8 + rs1] + uimm) =
-        state->x[8 + rs2];
+    *(uint32_t *)(state->mem + state->x[8 + rs1] + uimm) = state->x[8 + rs2];
 }
 
 void ExecCSd(State *state, uint32_t instr) {
