@@ -813,10 +813,14 @@ void ExecOp32Instr(State *state, uint32_t instr) {
 }
 
 void ExecCAddi4spn(State *state, uint16_t instr) {
-    uint8_t uimm = (instr >> 5) & SetNBits(8);
+    uint32_t uimm = 
+        ((instr >> 7 & SetNBits(4)) << 6) |
+        ((instr >> 11 & SetNBits(2)) << 4) |
+        ((instr >> 5 & SetNBits(1)) << 3) |
+        ((instr >> 6 & SetNBits(1)) << 2);
     int8_t rd = (instr >> 2) & SetNBits(3);
 
-    state->x[8 + state->x[rd]] = state->x[2] + uimm;
+    state->x[8 + rd] = state->x[2] + uimm;
 }
 
 void ExecCLw(State *state, uint16_t instr) {
@@ -848,7 +852,7 @@ void ExecCSw(State *state, uint16_t instr) {
     uint8_t rs2 = (instr >> 2) & SetNBits(3);
 
     *(uint32_t *)(state->mem + state->x[8 + rs1] + uimm) =
-        state->x[8 + state->x[rs2]];
+        state->x[8 + rs2];
 }
 
 void ExecCSd(State *state, uint32_t instr) {
@@ -878,7 +882,7 @@ void ExecCAddiw(State *state, uint16_t instr) {
         ((instr >> 12 & SetNBits(1)) << 5) | ((instr >> 2) & SetNBits(5)), 5);
     uint8_t rd = (instr >> 7) & SetNBits(5);
 
-    state->x[rd] = (int32_t)((state->x[rd] + imm) & SetNBits(32));
+    state->x[rd] = Sext((state->x[rd] + imm) & SetNBits(32), 31);
 }
 
 void ExecCLi(State *state, uint16_t instr) {
@@ -902,7 +906,7 @@ void ExecCAddi16sp(State *state, uint16_t instr) {
 
 void ExecCLui(State *state, uint16_t instr) {
     int32_t imm = Sext(((instr >> 12 & SetNBits(1)) << 17) |
-                           ((instr >> 2) & SetNBits(5) << 12),
+                           ((instr >> 2 & SetNBits(5)) << 12),
                        17);
     uint8_t rd = (instr >> 7) & SetNBits(5);
 
@@ -961,10 +965,10 @@ void ExecCBeqz(State *state, uint16_t instr) {
                            ((instr >> 3 & SetNBits(2)) << 1),
                        8);
 
-    imm <<= 1;
-
     if (state->x[8 + rs1] == 0)
         state->pc += imm;
+    else
+        state->pc += sizeof(instr);
 }
 
 void ExecCBnez(State *state, uint16_t instr) {
@@ -976,10 +980,10 @@ void ExecCBnez(State *state, uint16_t instr) {
                            ((instr >> 3 & SetNBits(2)) << 1),
                        8);
 
-    imm <<= 1;
-
     if (state->x[8 + rs1] != 0)
         state->pc += imm;
+    else
+        state->pc += sizeof(instr);
 }
 
 void ExecCSub(State *state, uint16_t instr) {

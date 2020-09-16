@@ -45,6 +45,7 @@ size_t ReadBinaryFile(const char *name, uint8_t **buf) {
 
 void CPUMain(State *state, uint64_t start_addr, size_t code_size) {
     for (state->pc = start_addr; state->pc < start_addr + code_size;) {
+        printf("%llx: ra: %lld, sp: %lld, 4072: %lld\n", state->pc, state->x[1], state->x[2], *(int64_t *)(state->mem + 4080));
         ExecInstruction(state, *(uint32_t *)(state->mem + state->pc));
         state->x[0] = 0;
     }
