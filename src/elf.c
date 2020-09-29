@@ -5,9 +5,9 @@ uint64_t LoadElf(State *state, size_t size, uint8_t *bin) {
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)bin;
 
     if (memcmp(ehdr->e_ident, ELFMAG, SELFMAG)) {
-        Error("Not an Elf file");
+        Error("Not an ELF file");
     } else if (ehdr->e_type != ET_EXEC) {
-        Error("Not an executable Elf file");
+        Error("Not an executable ELF file");
     }
 
     uint64_t sh_size = sizeof(Elf64_Shdr);

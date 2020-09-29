@@ -20,6 +20,27 @@ run_test() {
     fi
 }
 
+run_test_isa() {
+    files=`find ./test/riscv-tests -not -name "*.dump" | grep rv64ui-p-`
+    failed=()
+    for file in $files ; do
+        ./bin/rve --debug $file &> /dev/null
+        if [ "$?" != "1" ]; then
+            failed+=($file)
+        fi
+    done
+
+    for f in ${failed[@]}; do
+        echo "${f}"
+    done
+
+    if [ "${#failed[*]}" = "0" ]; then
+        echo "All test passed! :)"
+    fi
+}
+
+run_test_isa
+
 cd test
 make clean &> /dev/null
 cd ..

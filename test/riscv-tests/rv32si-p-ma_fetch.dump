@@ -1,0 +1,202 @@
+
+rv32si-p-ma_fetch:     file format elf32-littleriscv
+
+
+Disassembly of section .text.init:
+
+00010000 <_start>:
+   10000:	0480006f          	j	10048 <reset_vector>
+
+00010004 <trap_vector>:
+   10004:	34202f73          	csrr	t5,mcause
+   10008:	00800f93          	li	t6,8
+   1000c:	03ff0863          	beq	t5,t6,1003c <write_tohost>
+   10010:	00900f93          	li	t6,9
+   10014:	03ff0463          	beq	t5,t6,1003c <write_tohost>
+   10018:	00b00f93          	li	t6,11
+   1001c:	03ff0063          	beq	t5,t6,1003c <write_tohost>
+   10020:	00000f13          	li	t5,0
+   10024:	000f0463          	beqz	t5,1002c <trap_vector+0x28>
+   10028:	000f0067          	jr	t5
+   1002c:	34202f73          	csrr	t5,mcause
+   10030:	000f5463          	bgez	t5,10038 <handle_exception>
+   10034:	0040006f          	j	10038 <handle_exception>
+
+00010038 <handle_exception>:
+   10038:	5391e193          	ori	gp,gp,1337
+
+0001003c <write_tohost>:
+   1003c:	00001f17          	auipc	t5,0x1
+   10040:	fc3f2223          	sw	gp,-60(t5) # 11000 <tohost>
+   10044:	ff9ff06f          	j	1003c <write_tohost>
+
+00010048 <reset_vector>:
+   10048:	00000093          	li	ra,0
+   1004c:	00000113          	li	sp,0
+   10050:	00000193          	li	gp,0
+   10054:	00000213          	li	tp,0
+   10058:	00000293          	li	t0,0
+   1005c:	00000313          	li	t1,0
+   10060:	00000393          	li	t2,0
+   10064:	00000413          	li	s0,0
+   10068:	00000493          	li	s1,0
+   1006c:	00000513          	li	a0,0
+   10070:	00000593          	li	a1,0
+   10074:	00000613          	li	a2,0
+   10078:	00000693          	li	a3,0
+   1007c:	00000713          	li	a4,0
+   10080:	00000793          	li	a5,0
+   10084:	00000813          	li	a6,0
+   10088:	00000893          	li	a7,0
+   1008c:	00000913          	li	s2,0
+   10090:	00000993          	li	s3,0
+   10094:	00000a13          	li	s4,0
+   10098:	00000a93          	li	s5,0
+   1009c:	00000b13          	li	s6,0
+   100a0:	00000b93          	li	s7,0
+   100a4:	00000c13          	li	s8,0
+   100a8:	00000c93          	li	s9,0
+   100ac:	00000d13          	li	s10,0
+   100b0:	00000d93          	li	s11,0
+   100b4:	00000e13          	li	t3,0
+   100b8:	00000e93          	li	t4,0
+   100bc:	00000f13          	li	t5,0
+   100c0:	00000f93          	li	t6,0
+   100c4:	f1402573          	csrr	a0,mhartid
+   100c8:	00051063          	bnez	a0,100c8 <reset_vector+0x80>
+   100cc:	00000297          	auipc	t0,0x0
+   100d0:	01028293          	addi	t0,t0,16 # 100dc <reset_vector+0x94>
+   100d4:	30529073          	csrw	mtvec,t0
+   100d8:	18005073          	csrwi	satp,0
+   100dc:	00000297          	auipc	t0,0x0
+   100e0:	02028293          	addi	t0,t0,32 # 100fc <reset_vector+0xb4>
+   100e4:	30529073          	csrw	mtvec,t0
+   100e8:	800002b7          	lui	t0,0x80000
+   100ec:	fff28293          	addi	t0,t0,-1 # 7fffffff <_end+0x7ffedfff>
+   100f0:	3b029073          	csrw	pmpaddr0,t0
+   100f4:	01f00293          	li	t0,31
+   100f8:	3a029073          	csrw	pmpcfg0,t0
+   100fc:	00000297          	auipc	t0,0x0
+   10100:	01828293          	addi	t0,t0,24 # 10114 <reset_vector+0xcc>
+   10104:	30529073          	csrw	mtvec,t0
+   10108:	30205073          	csrwi	medeleg,0
+   1010c:	30305073          	csrwi	mideleg,0
+   10110:	30405073          	csrwi	mie,0
+   10114:	00000193          	li	gp,0
+   10118:	00000297          	auipc	t0,0x0
+   1011c:	eec28293          	addi	t0,t0,-276 # 10004 <trap_vector>
+   10120:	30529073          	csrw	mtvec,t0
+   10124:	00100513          	li	a0,1
+   10128:	01f51513          	slli	a0,a0,0x1f
+   1012c:	00054c63          	bltz	a0,10144 <reset_vector+0xfc>
+   10130:	0ff0000f          	fence
+   10134:	00100193          	li	gp,1
+   10138:	05d00893          	li	a7,93
+   1013c:	00000513          	li	a0,0
+   10140:	00000073          	ecall
+   10144:	00000297          	auipc	t0,0x0
+   10148:	11c28293          	addi	t0,t0,284 # 10260 <stvec_handler>
+   1014c:	00028a63          	beqz	t0,10160 <reset_vector+0x118>
+   10150:	10529073          	csrw	stvec,t0
+   10154:	0000b2b7          	lui	t0,0xb
+   10158:	10928293          	addi	t0,t0,265 # b109 <_start-0x4ef7>
+   1015c:	30229073          	csrw	medeleg,t0
+   10160:	30005073          	csrwi	mstatus,0
+   10164:	00001537          	lui	a0,0x1
+   10168:	80050513          	addi	a0,a0,-2048 # 800 <_start-0xf800>
+   1016c:	30052073          	csrs	mstatus,a0
+   10170:	02200513          	li	a0,34
+   10174:	30352073          	csrs	mideleg,a0
+   10178:	00000297          	auipc	t0,0x0
+   1017c:	01428293          	addi	t0,t0,20 # 1018c <reset_vector+0x144>
+   10180:	34129073          	csrw	mepc,t0
+   10184:	f1402573          	csrr	a0,mhartid
+   10188:	30200073          	mret
+   1018c:	00200193          	li	gp,2
+   10190:	00000313          	li	t1,0
+   10194:	00000297          	auipc	t0,0x0
+   10198:	00c28293          	addi	t0,t0,12 # 101a0 <reset_vector+0x158>
+   1019c:	00228367          	jalr	t1,2(t0)
+   101a0:	a011                	j	101a4 <reset_vector+0x15c>
+   101a2:	a019                	j	101a8 <reset_vector+0x160>
+   101a4:	08c0006f          	j	10230 <fail>
+   101a8:	00300193          	li	gp,3
+   101ac:	00000297          	auipc	t0,0x0
+   101b0:	00c28293          	addi	t0,t0,12 # 101b8 <reset_vector+0x170>
+   101b4:	00128367          	jalr	t1,1(t0)
+   101b8:	0080006f          	j	101c0 <reset_vector+0x178>
+   101bc:	0740006f          	j	10230 <fail>
+   101c0:	00400193          	li	gp,4
+   101c4:	00000313          	li	t1,0
+   101c8:	00000297          	auipc	t0,0x0
+   101cc:	00c28293          	addi	t0,t0,12 # 101d4 <reset_vector+0x18c>
+   101d0:	00328367          	jalr	t1,3(t0)
+   101d4:	a011                	j	101d8 <reset_vector+0x190>
+   101d6:	a019                	j	101dc <reset_vector+0x194>
+   101d8:	0580006f          	j	10230 <fail>
+   101dc:	00500193          	li	gp,5
+   101e0:	00000313          	li	t1,0
+   101e4:	00000297          	auipc	t0,0x0
+   101e8:	00c28293          	addi	t0,t0,12 # 101f0 <reset_vector+0x1a8>
+   101ec:	0060036f          	jal	t1,101f2 <reset_vector+0x1aa>
+   101f0:	a011                	j	101f4 <reset_vector+0x1ac>
+   101f2:	a019                	j	101f8 <reset_vector+0x1b0>
+   101f4:	03c0006f          	j	10230 <fail>
+   101f8:	00600193          	li	gp,6
+   101fc:	00000313          	li	t1,0
+   10200:	00000297          	auipc	t0,0x0
+   10204:	00c28293          	addi	t0,t0,12 # 1020c <reset_vector+0x1c4>
+   10208:	00000363          	beqz	zero,1020e <reset_vector+0x1c6>
+   1020c:	a011                	j	10210 <reset_vector+0x1c8>
+   1020e:	a019                	j	10214 <reset_vector+0x1cc>
+   10210:	0200006f          	j	10230 <fail>
+   10214:	00700193          	li	gp,7
+   10218:	00001563          	bnez	zero,10222 <reset_vector+0x1da>
+   1021c:	00c0006f          	j	10228 <reset_vector+0x1e0>
+   10220:	a009                	j	10222 <reset_vector+0x1da>
+   10222:	a009                	j	10224 <reset_vector+0x1dc>
+   10224:	00c0006f          	j	10230 <fail>
+   10228:	0240006f          	j	1024c <pass>
+   1022c:	02301063          	bne	zero,gp,1024c <pass>
+
+00010230 <fail>:
+   10230:	0ff0000f          	fence
+   10234:	00018063          	beqz	gp,10234 <fail+0x4>
+   10238:	00119193          	slli	gp,gp,0x1
+   1023c:	0011e193          	ori	gp,gp,1
+   10240:	05d00893          	li	a7,93
+   10244:	00018513          	mv	a0,gp
+   10248:	00000073          	ecall
+
+0001024c <pass>:
+   1024c:	0ff0000f          	fence
+   10250:	00100193          	li	gp,1
+   10254:	05d00893          	li	a7,93
+   10258:	00000513          	li	a0,0
+   1025c:	00000073          	ecall
+
+00010260 <stvec_handler>:
+   10260:	00200513          	li	a0,2
+   10264:	02a18063          	beq	gp,a0,10284 <stvec_handler+0x24>
+   10268:	00400513          	li	a0,4
+   1026c:	00a18c63          	beq	gp,a0,10284 <stvec_handler+0x24>
+   10270:	00500513          	li	a0,5
+   10274:	00a18863          	beq	gp,a0,10284 <stvec_handler+0x24>
+   10278:	00600513          	li	a0,6
+   1027c:	00a18463          	beq	gp,a0,10284 <stvec_handler+0x24>
+   10280:	fb1ff06f          	j	10230 <fail>
+   10284:	fa0316e3          	bnez	t1,10230 <fail>
+   10288:	00000593          	li	a1,0
+   1028c:	14202573          	csrr	a0,scause
+   10290:	fab510e3          	bne	a0,a1,10230 <fail>
+   10294:	141025f3          	csrr	a1,sepc
+   10298:	00458593          	addi	a1,a1,4
+   1029c:	f8b29ae3          	bne	t0,a1,10230 <fail>
+   102a0:	14302573          	csrr	a0,stval
+   102a4:	00050663          	beqz	a0,102b0 <stvec_handler+0x50>
+   102a8:	ffe50513          	addi	a0,a0,-2
+   102ac:	f85512e3          	bne	a0,t0,10230 <fail>
+   102b0:	00c58593          	addi	a1,a1,12
+   102b4:	14159073          	csrw	sepc,a1
+   102b8:	10200073          	sret
+   102bc:	c0001073          	unimp

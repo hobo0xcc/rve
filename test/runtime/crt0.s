@@ -2,7 +2,7 @@
 
 .global _start
 _start:
-    la sp, 0x1000
+    la sp, stack
     addi sp, sp, -8
     sd ra, 0(sp)
     jal ra, main

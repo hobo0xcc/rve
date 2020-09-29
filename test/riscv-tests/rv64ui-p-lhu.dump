@@ -1,0 +1,347 @@
+
+rv64ui-p-lhu:     file format elf64-littleriscv
+
+
+Disassembly of section .text.init:
+
+0000000000010000 <_start>:
+   10000:	0480006f          	j	10048 <reset_vector>
+
+0000000000010004 <trap_vector>:
+   10004:	34202f73          	csrr	t5,mcause
+   10008:	00800f93          	li	t6,8
+   1000c:	03ff0863          	beq	t5,t6,1003c <write_tohost>
+   10010:	00900f93          	li	t6,9
+   10014:	03ff0463          	beq	t5,t6,1003c <write_tohost>
+   10018:	00b00f93          	li	t6,11
+   1001c:	03ff0063          	beq	t5,t6,1003c <write_tohost>
+   10020:	00000f13          	li	t5,0
+   10024:	000f0463          	beqz	t5,1002c <trap_vector+0x28>
+   10028:	000f0067          	jr	t5
+   1002c:	34202f73          	csrr	t5,mcause
+   10030:	000f5463          	bgez	t5,10038 <handle_exception>
+   10034:	0040006f          	j	10038 <handle_exception>
+
+0000000000010038 <handle_exception>:
+   10038:	5391e193          	ori	gp,gp,1337
+
+000000000001003c <write_tohost>:
+   1003c:	00001f17          	auipc	t5,0x1
+   10040:	fc3f2223          	sw	gp,-60(t5) # 11000 <tohost>
+   10044:	ff9ff06f          	j	1003c <write_tohost>
+
+0000000000010048 <reset_vector>:
+   10048:	00000093          	li	ra,0
+   1004c:	00000113          	li	sp,0
+   10050:	00000193          	li	gp,0
+   10054:	00000213          	li	tp,0
+   10058:	00000293          	li	t0,0
+   1005c:	00000313          	li	t1,0
+   10060:	00000393          	li	t2,0
+   10064:	00000413          	li	s0,0
+   10068:	00000493          	li	s1,0
+   1006c:	00000513          	li	a0,0
+   10070:	00000593          	li	a1,0
+   10074:	00000613          	li	a2,0
+   10078:	00000693          	li	a3,0
+   1007c:	00000713          	li	a4,0
+   10080:	00000793          	li	a5,0
+   10084:	00000813          	li	a6,0
+   10088:	00000893          	li	a7,0
+   1008c:	00000913          	li	s2,0
+   10090:	00000993          	li	s3,0
+   10094:	00000a13          	li	s4,0
+   10098:	00000a93          	li	s5,0
+   1009c:	00000b13          	li	s6,0
+   100a0:	00000b93          	li	s7,0
+   100a4:	00000c13          	li	s8,0
+   100a8:	00000c93          	li	s9,0
+   100ac:	00000d13          	li	s10,0
+   100b0:	00000d93          	li	s11,0
+   100b4:	00000e13          	li	t3,0
+   100b8:	00000e93          	li	t4,0
+   100bc:	00000f13          	li	t5,0
+   100c0:	00000f93          	li	t6,0
+   100c4:	f1402573          	csrr	a0,mhartid
+   100c8:	00051063          	bnez	a0,100c8 <reset_vector+0x80>
+   100cc:	00000297          	auipc	t0,0x0
+   100d0:	01028293          	addi	t0,t0,16 # 100dc <reset_vector+0x94>
+   100d4:	30529073          	csrw	mtvec,t0
+   100d8:	18005073          	csrwi	satp,0
+   100dc:	00000297          	auipc	t0,0x0
+   100e0:	02428293          	addi	t0,t0,36 # 10100 <reset_vector+0xb8>
+   100e4:	30529073          	csrw	mtvec,t0
+   100e8:	0010029b          	addiw	t0,zero,1
+   100ec:	03529293          	slli	t0,t0,0x35
+   100f0:	fff28293          	addi	t0,t0,-1
+   100f4:	3b029073          	csrw	pmpaddr0,t0
+   100f8:	01f00293          	li	t0,31
+   100fc:	3a029073          	csrw	pmpcfg0,t0
+   10100:	00000297          	auipc	t0,0x0
+   10104:	01828293          	addi	t0,t0,24 # 10118 <reset_vector+0xd0>
+   10108:	30529073          	csrw	mtvec,t0
+   1010c:	30205073          	csrwi	medeleg,0
+   10110:	30305073          	csrwi	mideleg,0
+   10114:	30405073          	csrwi	mie,0
+   10118:	00000193          	li	gp,0
+   1011c:	00000297          	auipc	t0,0x0
+   10120:	ee828293          	addi	t0,t0,-280 # 10004 <trap_vector>
+   10124:	30529073          	csrw	mtvec,t0
+   10128:	00100513          	li	a0,1
+   1012c:	01f51513          	slli	a0,a0,0x1f
+   10130:	00055c63          	bgez	a0,10148 <reset_vector+0x100>
+   10134:	0ff0000f          	fence
+   10138:	00100193          	li	gp,1
+   1013c:	05d00893          	li	a7,93
+   10140:	00000513          	li	a0,0
+   10144:	00000073          	ecall
+   10148:	00000293          	li	t0,0
+   1014c:	00028a63          	beqz	t0,10160 <reset_vector+0x118>
+   10150:	10529073          	csrw	stvec,t0
+   10154:	0000b2b7          	lui	t0,0xb
+   10158:	1092829b          	addiw	t0,t0,265
+   1015c:	30229073          	csrw	medeleg,t0
+   10160:	30005073          	csrwi	mstatus,0
+   10164:	00000297          	auipc	t0,0x0
+   10168:	01428293          	addi	t0,t0,20 # 10178 <test_2>
+   1016c:	34129073          	csrw	mepc,t0
+   10170:	f1402573          	csrr	a0,mhartid
+   10174:	30200073          	mret
+
+0000000000010178 <test_2>:
+   10178:	00002097          	auipc	ra,0x2
+   1017c:	e8808093          	addi	ra,ra,-376 # 12000 <begin_signature>
+   10180:	0000d703          	lhu	a4,0(ra)
+   10184:	0ff00393          	li	t2,255
+   10188:	00200193          	li	gp,2
+   1018c:	26771663          	bne	a4,t2,103f8 <fail>
+
+0000000000010190 <test_3>:
+   10190:	00002097          	auipc	ra,0x2
+   10194:	e7008093          	addi	ra,ra,-400 # 12000 <begin_signature>
+   10198:	0020d703          	lhu	a4,2(ra)
+   1019c:	000103b7          	lui	t2,0x10
+   101a0:	f003839b          	addiw	t2,t2,-256
+   101a4:	00300193          	li	gp,3
+   101a8:	24771863          	bne	a4,t2,103f8 <fail>
+
+00000000000101ac <test_4>:
+   101ac:	00002097          	auipc	ra,0x2
+   101b0:	e5408093          	addi	ra,ra,-428 # 12000 <begin_signature>
+   101b4:	0040d703          	lhu	a4,4(ra)
+   101b8:	000013b7          	lui	t2,0x1
+   101bc:	ff03839b          	addiw	t2,t2,-16
+   101c0:	00400193          	li	gp,4
+   101c4:	22771a63          	bne	a4,t2,103f8 <fail>
+
+00000000000101c8 <test_5>:
+   101c8:	00002097          	auipc	ra,0x2
+   101cc:	e3808093          	addi	ra,ra,-456 # 12000 <begin_signature>
+   101d0:	0060d703          	lhu	a4,6(ra)
+   101d4:	0000f3b7          	lui	t2,0xf
+   101d8:	00f3839b          	addiw	t2,t2,15
+   101dc:	00500193          	li	gp,5
+   101e0:	20771c63          	bne	a4,t2,103f8 <fail>
+
+00000000000101e4 <test_6>:
+   101e4:	00002097          	auipc	ra,0x2
+   101e8:	e2208093          	addi	ra,ra,-478 # 12006 <tdat4>
+   101ec:	ffa0d703          	lhu	a4,-6(ra)
+   101f0:	0ff00393          	li	t2,255
+   101f4:	00600193          	li	gp,6
+   101f8:	20771063          	bne	a4,t2,103f8 <fail>
+
+00000000000101fc <test_7>:
+   101fc:	00002097          	auipc	ra,0x2
+   10200:	e0a08093          	addi	ra,ra,-502 # 12006 <tdat4>
+   10204:	ffc0d703          	lhu	a4,-4(ra)
+   10208:	000103b7          	lui	t2,0x10
+   1020c:	f003839b          	addiw	t2,t2,-256
+   10210:	00700193          	li	gp,7
+   10214:	1e771263          	bne	a4,t2,103f8 <fail>
+
+0000000000010218 <test_8>:
+   10218:	00002097          	auipc	ra,0x2
+   1021c:	dee08093          	addi	ra,ra,-530 # 12006 <tdat4>
+   10220:	ffe0d703          	lhu	a4,-2(ra)
+   10224:	000013b7          	lui	t2,0x1
+   10228:	ff03839b          	addiw	t2,t2,-16
+   1022c:	00800193          	li	gp,8
+   10230:	1c771463          	bne	a4,t2,103f8 <fail>
+
+0000000000010234 <test_9>:
+   10234:	00002097          	auipc	ra,0x2
+   10238:	dd208093          	addi	ra,ra,-558 # 12006 <tdat4>
+   1023c:	0000d703          	lhu	a4,0(ra)
+   10240:	0000f3b7          	lui	t2,0xf
+   10244:	00f3839b          	addiw	t2,t2,15
+   10248:	00900193          	li	gp,9
+   1024c:	1a771663          	bne	a4,t2,103f8 <fail>
+
+0000000000010250 <test_10>:
+   10250:	00002097          	auipc	ra,0x2
+   10254:	db008093          	addi	ra,ra,-592 # 12000 <begin_signature>
+   10258:	fe008093          	addi	ra,ra,-32
+   1025c:	0200d283          	lhu	t0,32(ra)
+   10260:	0ff00393          	li	t2,255
+   10264:	00a00193          	li	gp,10
+   10268:	18729863          	bne	t0,t2,103f8 <fail>
+
+000000000001026c <test_11>:
+   1026c:	00002097          	auipc	ra,0x2
+   10270:	d9408093          	addi	ra,ra,-620 # 12000 <begin_signature>
+   10274:	ffb08093          	addi	ra,ra,-5
+   10278:	0070d283          	lhu	t0,7(ra)
+   1027c:	000103b7          	lui	t2,0x10
+   10280:	f003839b          	addiw	t2,t2,-256
+   10284:	00b00193          	li	gp,11
+   10288:	16729863          	bne	t0,t2,103f8 <fail>
+
+000000000001028c <test_12>:
+   1028c:	00c00193          	li	gp,12
+   10290:	00000213          	li	tp,0
+   10294:	00002097          	auipc	ra,0x2
+   10298:	d6e08093          	addi	ra,ra,-658 # 12002 <tdat2>
+   1029c:	0020d703          	lhu	a4,2(ra)
+   102a0:	00070313          	mv	t1,a4
+   102a4:	000013b7          	lui	t2,0x1
+   102a8:	ff03839b          	addiw	t2,t2,-16
+   102ac:	14731663          	bne	t1,t2,103f8 <fail>
+   102b0:	00120213          	addi	tp,tp,1 # 1 <_start-0xffff>
+   102b4:	00200293          	li	t0,2
+   102b8:	fc521ee3          	bne	tp,t0,10294 <test_12+0x8>
+
+00000000000102bc <test_13>:
+   102bc:	00d00193          	li	gp,13
+   102c0:	00000213          	li	tp,0
+   102c4:	00002097          	auipc	ra,0x2
+   102c8:	d4008093          	addi	ra,ra,-704 # 12004 <tdat3>
+   102cc:	0020d703          	lhu	a4,2(ra)
+   102d0:	00000013          	nop
+   102d4:	00070313          	mv	t1,a4
+   102d8:	0000f3b7          	lui	t2,0xf
+   102dc:	00f3839b          	addiw	t2,t2,15
+   102e0:	10731c63          	bne	t1,t2,103f8 <fail>
+   102e4:	00120213          	addi	tp,tp,1 # 1 <_start-0xffff>
+   102e8:	00200293          	li	t0,2
+   102ec:	fc521ce3          	bne	tp,t0,102c4 <test_13+0x8>
+
+00000000000102f0 <test_14>:
+   102f0:	00e00193          	li	gp,14
+   102f4:	00000213          	li	tp,0
+   102f8:	00002097          	auipc	ra,0x2
+   102fc:	d0808093          	addi	ra,ra,-760 # 12000 <begin_signature>
+   10300:	0020d703          	lhu	a4,2(ra)
+   10304:	00000013          	nop
+   10308:	00000013          	nop
+   1030c:	00070313          	mv	t1,a4
+   10310:	000103b7          	lui	t2,0x10
+   10314:	f003839b          	addiw	t2,t2,-256
+   10318:	0e731063          	bne	t1,t2,103f8 <fail>
+   1031c:	00120213          	addi	tp,tp,1 # 1 <_start-0xffff>
+   10320:	00200293          	li	t0,2
+   10324:	fc521ae3          	bne	tp,t0,102f8 <test_14+0x8>
+
+0000000000010328 <test_15>:
+   10328:	00f00193          	li	gp,15
+   1032c:	00000213          	li	tp,0
+   10330:	00002097          	auipc	ra,0x2
+   10334:	cd208093          	addi	ra,ra,-814 # 12002 <tdat2>
+   10338:	0020d703          	lhu	a4,2(ra)
+   1033c:	000013b7          	lui	t2,0x1
+   10340:	ff03839b          	addiw	t2,t2,-16
+   10344:	0a771a63          	bne	a4,t2,103f8 <fail>
+   10348:	00120213          	addi	tp,tp,1 # 1 <_start-0xffff>
+   1034c:	00200293          	li	t0,2
+   10350:	fe5210e3          	bne	tp,t0,10330 <test_15+0x8>
+
+0000000000010354 <test_16>:
+   10354:	01000193          	li	gp,16
+   10358:	00000213          	li	tp,0
+   1035c:	00002097          	auipc	ra,0x2
+   10360:	ca808093          	addi	ra,ra,-856 # 12004 <tdat3>
+   10364:	00000013          	nop
+   10368:	0020d703          	lhu	a4,2(ra)
+   1036c:	0000f3b7          	lui	t2,0xf
+   10370:	00f3839b          	addiw	t2,t2,15
+   10374:	08771263          	bne	a4,t2,103f8 <fail>
+   10378:	00120213          	addi	tp,tp,1 # 1 <_start-0xffff>
+   1037c:	00200293          	li	t0,2
+   10380:	fc521ee3          	bne	tp,t0,1035c <test_16+0x8>
+
+0000000000010384 <test_17>:
+   10384:	01100193          	li	gp,17
+   10388:	00000213          	li	tp,0
+   1038c:	00002097          	auipc	ra,0x2
+   10390:	c7408093          	addi	ra,ra,-908 # 12000 <begin_signature>
+   10394:	00000013          	nop
+   10398:	00000013          	nop
+   1039c:	0020d703          	lhu	a4,2(ra)
+   103a0:	000103b7          	lui	t2,0x10
+   103a4:	f003839b          	addiw	t2,t2,-256
+   103a8:	04771863          	bne	a4,t2,103f8 <fail>
+   103ac:	00120213          	addi	tp,tp,1 # 1 <_start-0xffff>
+   103b0:	00200293          	li	t0,2
+   103b4:	fc521ce3          	bne	tp,t0,1038c <test_17+0x8>
+
+00000000000103b8 <test_18>:
+   103b8:	00002297          	auipc	t0,0x2
+   103bc:	c4828293          	addi	t0,t0,-952 # 12000 <begin_signature>
+   103c0:	0002d103          	lhu	sp,0(t0)
+   103c4:	00200113          	li	sp,2
+   103c8:	00200393          	li	t2,2
+   103cc:	01200193          	li	gp,18
+   103d0:	02711463          	bne	sp,t2,103f8 <fail>
+
+00000000000103d4 <test_19>:
+   103d4:	00002297          	auipc	t0,0x2
+   103d8:	c2c28293          	addi	t0,t0,-980 # 12000 <begin_signature>
+   103dc:	0002d103          	lhu	sp,0(t0)
+   103e0:	00000013          	nop
+   103e4:	00200113          	li	sp,2
+   103e8:	00200393          	li	t2,2
+   103ec:	01300193          	li	gp,19
+   103f0:	00711463          	bne	sp,t2,103f8 <fail>
+   103f4:	02301063          	bne	zero,gp,10414 <pass>
+
+00000000000103f8 <fail>:
+   103f8:	0ff0000f          	fence
+   103fc:	00018063          	beqz	gp,103fc <fail+0x4>
+   10400:	00119193          	slli	gp,gp,0x1
+   10404:	0011e193          	ori	gp,gp,1
+   10408:	05d00893          	li	a7,93
+   1040c:	00018513          	mv	a0,gp
+   10410:	00000073          	ecall
+
+0000000000010414 <pass>:
+   10414:	0ff0000f          	fence
+   10418:	00100193          	li	gp,1
+   1041c:	05d00893          	li	a7,93
+   10420:	00000513          	li	a0,0
+   10424:	00000073          	ecall
+   10428:	c0001073          	unimp
+   1042c:	0000                	unimp
+   1042e:	0000                	unimp
+   10430:	0000                	unimp
+   10432:	0000                	unimp
+   10434:	0000                	unimp
+   10436:	0000                	unimp
+   10438:	0000                	unimp
+   1043a:	0000                	unimp
+
+Disassembly of section .data:
+
+0000000000012000 <begin_signature>:
+   12000:	00ff                	0xff
+
+0000000000012002 <tdat2>:
+   12002:	ff00                	sd	s0,56(a4)
+
+0000000000012004 <tdat3>:
+   12004:	0ff0                	addi	a2,sp,988
+
+0000000000012006 <tdat4>:
+   12006:	0000f00f          	0xf00f
+   1200a:	0000                	unimp
+   1200c:	0000                	unimp
+   1200e:	0000                	unimp

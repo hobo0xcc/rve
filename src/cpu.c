@@ -1,8 +1,48 @@
 #include "rve.h"
+#include <stdint.h>
 
-int64_t SetNBits(int32_t n) { return ((uint64_t)1 << n) - 1; }
+int64_t SetNBits(int32_t n) {
+    if (n == 64) return ~((uint64_t)0);
+    return ((uint64_t)1 << n) - 1;
+}
 
 int64_t SetOneBit(int i) { return (1 << i); }
+
+void WriteCSR(State *state, uint16_t csr, uint8_t start_bit, uint8_t end_bit, uint64_t val) {
+    assert(start_bit <= end_bit);
+    
+    uint64_t mask = SetNBits(end_bit - start_bit + 1);
+    val &= mask;
+    state->csr[csr] &= (~(mask << start_bit));
+    state->csr[csr] |= (val << start_bit);
+}
+
+uint64_t ReadCSR(State *state, uint16_t csr, uint8_t start_bit, uint8_t end_bit) {
+    assert(start_bit <= end_bit);
+
+    uint64_t mask = SetNBits(end_bit - start_bit + 1);
+    return (state->csr[csr] & (mask << start_bit)) >> start_bit;
+}
+
+bool Require(State *state, uint8_t mode) {
+    if (state->mode == MACHINE) {
+        if (mode == MACHINE || mode == SUPERVISOR || mode == USER) {
+            return true;
+        }
+    } else if (state->mode == SUPERVISOR) {
+        if (mode == SUPERVISOR || mode == USER) {
+            return true;
+        }
+    } else if (state->mode == USER) {
+        if (mode == USER) {
+            return true;
+        }
+    }
+
+    state->excepted = true;
+    state->exception_code = IllegalInstruction;
+    return false;
+}
 
 int64_t Sext(int64_t i, int top_bit) {
     if (i & SetOneBit(top_bit)) {
@@ -16,41 +56,41 @@ int64_t Sext(int64_t i, int top_bit) {
 // instr`.
 
 void ExecAddi(State *state, uint32_t instr) {
-    uint8_t rd = (instr >> 7) & SetNBits(5);
-    uint8_t rs1 = (instr >> 15) & SetNBits(5);
-    int32_t immediate = Sext((instr >> 20) & SetNBits(12), 11);
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    int32_t immediate = Sext(instr >> 20 & SetNBits(12), 11);
 
     state->x[rd] = state->x[rs1] + immediate;
 }
 
 void ExecSlli(State *state, uint32_t instr) {
-    uint8_t rd = (instr >> 7) & SetNBits(5);
-    uint8_t rs1 = (instr >> 15) & SetNBits(5);
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
     uint8_t immediate = (instr >> 20) & SetNBits(5);
 
     state->x[rd] = (uint64_t)state->x[rs1] << (uint64_t)immediate;
 }
 
 void ExecSlti(State *state, uint32_t instr) {
-    uint8_t rd = (instr >> 7) & SetNBits(5);
-    uint8_t rs1 = (instr >> 15) & SetNBits(5);
-    int32_t immediate = Sext((instr >> 20) & SetNBits(12), 11);
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    int32_t immediate = Sext(instr >> 20 & SetNBits(12), 11);
 
     state->x[rd] = state->x[rs1] < immediate;
 }
 
 void ExecSltiu(State *state, uint32_t instr) {
-    uint8_t rd = (instr >> 7) & SetNBits(5);
-    uint8_t rs1 = (instr >> 15) & SetNBits(5);
-    int32_t immediate = Sext((instr >> 20) & SetNBits(12), 11);
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    int32_t immediate = Sext(instr >> 20 & SetNBits(12), 11);
 
     state->x[rd] = ((uint64_t)state->x[rs1]) < ((uint64_t)immediate);
 }
 
 void ExecXori(State *state, uint32_t instr) {
-    uint8_t rd = (instr >> 7) & SetNBits(5);
-    uint8_t rs1 = (instr >> 15) & SetNBits(5);
-    int32_t immediate = Sext((instr >> 20) & SetNBits(12), 11);
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    int32_t immediate = Sext(instr >> 20 & SetNBits(12), 11);
 
     state->x[rd] = state->x[rs1] ^ immediate;
 }
@@ -126,14 +166,14 @@ void ExecOpImmInstr(State *state, uint32_t instr) {
 
 void ExecAuipc(State *state, uint32_t instr) {
     uint8_t rd = (instr >> 7) & SetNBits(5);
-    int32_t immediate = Sext((instr >> 12) & SetNBits(20), 19);
+    int64_t immediate = Sext((instr >> 12) & SetNBits(20), 19);
 
     state->x[rd] = state->pc + (immediate << 12);
 }
 
 void ExecLui(State *state, uint32_t instr) {
     uint8_t rd = (instr >> 7) & SetNBits(5);
-    int32_t immediate = Sext((instr >> 12) & SetNBits(20), 19);
+    int64_t immediate = Sext((instr >> 12) & SetNBits(20), 19);
 
     state->x[rd] = immediate << 12;
 }
@@ -1099,7 +1139,9 @@ void ExecCSdsp(State *state, uint32_t instr) {
 
 void ExecCompressedInstr(State *state, uint16_t instr) {
     if (instr == 0) {
-        Error("Invalid instruction: zero");
+        state->excepted = true;
+        state->exception_code = IllegalInstruction;
+        return;
     }
     uint8_t opcode = instr & SetNBits(2);
 
@@ -1247,11 +1289,53 @@ void ExecCompressedInstr(State *state, uint16_t instr) {
 void ExecEcall(State *state, uint32_t instr) {
     // TODO: Implement exception.
     printf("Exception\n");
+    state->excepted = true;
+    int exception_code;
+    if (state->mode == 0x3) {
+        exception_code = EnvironmentCallFromMMode;
+    } else if (state->mode == 0x1) {
+        exception_code = EnvironmentCallFromSMode;
+    } else if (state->mode == 0x0) {
+        exception_code = EnvironmentCallFromUMode;
+    } else {
+        state->excepted = false;
+        return;
+    }
+
+    state->exception_code = exception_code;
 }
 
 void ExecEbreak(State *state, uint32_t instr) {
     // TODO: Implement break point exception.
     printf("Break\n");
+}
+
+void ExecWfi(State *state, uint32_t instr) {
+    printf("wfi\n");
+    state->pc = UINT64_MAX;
+}
+
+void ExecMret(State *state, uint32_t instr) {
+    Require(state, MACHINE);
+    state->pc = state->csr[MEPC];
+    state->mode = ReadCSR(state, MSTATUS, 11, 12);
+    uint64_t mpie = ReadCSR(state, MSTATUS, 7, 7);
+    WriteCSR(state, MSTATUS, 3, 3, mpie);
+    WriteCSR(state, MSTATUS, 7, 7, 1);
+    WriteCSR(state, MSTATUS, 11, 12, 0);
+}
+
+void ExecSret(State *state, uint32_t instr) {
+    state->pc = state->csr[SEPC];
+    state->mode = ReadCSR(state, SSTATUS, 8, 8);
+    uint64_t spie = ReadCSR(state, SSTATUS, 5, 5);
+    WriteCSR(state, SSTATUS, 1, 1, spie);
+    WriteCSR(state, SSTATUS, 5, 5, 1);
+    WriteCSR(state, SSTATUS, 8, 8, 0);
+}
+
+void ExecUret(State *state, uint32_t instr) {
+    Error("Unimplemented.");
 }
 
 void ExecCsrrw(State *state, uint32_t instr) {
@@ -1315,17 +1399,32 @@ void ExecCsrrci(State *state, uint32_t instr) {
 
 void ExecSystemInstr(State *state, uint32_t instr) {
     uint8_t funct3 = instr >> 12 & SetNBits(3);
+    bool is_pc_written = false;
 
     switch (funct3) {
     case 0x0: {
-        uint32_t funct7 = instr >> 20 & SetNBits(12);
-        if (funct7 == 0x00) {
+        uint32_t funct12 = instr >> 20 & SetNBits(12);
+        if (funct12 == 0x00) {
             ExecEcall(state, instr);
-        } else if (funct7 == 0x01) {
+        } else if (funct12 == 0x01) {
             ExecEbreak(state, instr);
+        } else {
+            uint8_t funct5 = instr >> 20 & SetNBits(5);
+            uint8_t funct7 = instr >> 25 & SetNBits(7);
+            if (funct7 == 0x08 && funct5 == 0x5) {
+                ExecWfi(state, instr);
+            } else if (funct7 == 0x18 && funct5 == 0x2) {
+                ExecMret(state, instr);
+                is_pc_written = true;
+            } else if (funct7 == 0x08) {
+                ExecSret(state, instr);
+                is_pc_written = true;
+            } else if (funct7 == 0x00 && funct5 == 0x2) {
+                ExecUret(state, instr);
+                is_pc_written = true;
+            }
         }
     }
-
     break;
     case 0x1:
         ExecCsrrw(state, instr);
@@ -1347,6 +1446,22 @@ void ExecSystemInstr(State *state, uint32_t instr) {
         break;
     default:
         Error("Invalid instruction");
+    }
+
+    if (!is_pc_written)
+        state->pc += sizeof(instr);
+}
+
+void ExecFence(State *state, uint32_t instr) {
+
+}
+
+void ExecMiscMem(State *state, uint32_t instr) {
+    uint8_t funct3 = instr >> 12 & SetNBits(3);
+    if (funct3 == 0x0) {
+        ExecFence(state, instr);
+    } else {
+        Error("Invalid instruction: MISC-MEM.");
     }
 }
 
@@ -1403,6 +1518,9 @@ void ExecInstruction(State *state, uint32_t instr) {
         break;
     case SYSTEM:
         ExecSystemInstr(state, instr);
+        break;
+    case MISC_MEM:
+        ExecMiscMem(state, instr);
         state->pc += sizeof(instr);
         break;
     default:
