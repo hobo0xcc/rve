@@ -7,6 +7,8 @@
 #include <assert.h>
 
 #define XLEN 64
+#define UART_BASE 0x10000000
+#define UART_SIZE 0x100
 
 enum OpCode {
     OP_IMM = 0x13,
@@ -55,6 +57,7 @@ typedef struct State {
     uint64_t csr[4096];
     int64_t x[32];
     uint8_t *mem;
+    uint8_t uart_mem[0x100];
     bool excepted;
     int exception_code;
     uint8_t mode;

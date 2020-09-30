@@ -26,16 +26,21 @@ run_test_isa() {
     for file in $files ; do
         ./bin/rve --debug $file &> /dev/null
         if [ "$?" != "1" ]; then
+            echo "$file: fail"
             failed+=($file)
+        else
+            echo "$file: pass"
         fi
     done
 
-    for f in ${failed[@]}; do
-        echo "${f}"
-    done
+    # for f in ${failed[@]}; do
+    #     echo "${f}"
+    # done
 
     if [ "${#failed[*]}" = "0" ]; then
-        echo "All test passed! :)"
+        echo "All tests passed! :)"
+    else
+        echo "${#failed[*]} test(s) failed... :("
     fi
 }
 

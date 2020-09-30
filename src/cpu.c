@@ -8,6 +8,65 @@ int64_t SetNBits(int32_t n) {
 
 int64_t SetOneBit(int i) { return (1 << i); }
 
+void UartWrite(State *state, uint64_t offset, uint8_t ch) {
+    if (offset == 0) {
+        state->uart_mem[offset] = ch;
+        printf("%c", ch);
+    } else {
+        state->uart_mem[offset] = ch;
+    }
+}
+
+uint8_t UartRead(State *state, uint64_t offset) {
+    if (offset == 0) {
+        uint8_t ch = getc(stdin);
+        state->uart_mem[offset] = ch;
+        return state->uart_mem[offset];
+    } else {
+        return state->uart_mem[offset];
+    }
+}
+
+void Write8(State *state, uint64_t addr, uint8_t val) {
+    if (addr >= UART_BASE && addr <= UART_BASE + UART_SIZE) {
+        UartWrite(state, addr - UART_BASE, val);
+    } else {
+        *(uint8_t *)(state->mem + addr) = val;
+    }
+}
+
+void Write16(State *state, uint64_t addr, uint16_t val) {
+    *(uint16_t *)(state->mem + addr) = val;
+}
+
+void Write32(State *state, uint64_t addr, uint32_t val) {
+    *(uint32_t *)(state->mem + addr) = val;
+}
+
+void Write64(State *state, uint64_t addr, uint64_t val) {
+    *(uint64_t *)(state->mem + addr) = val;
+}
+
+uint8_t Read8(State *state, uint64_t addr) {
+    if (addr >= UART_BASE && addr <= UART_BASE + UART_SIZE) {
+        return UartRead(state, addr - UART_BASE);
+    } else {
+        return *(uint8_t *)(state->mem + addr);
+    }
+}
+
+uint8_t Read16(State *state, uint64_t addr) {
+    return *(uint16_t *)(state->mem + addr);
+}
+
+uint32_t Read32(State *state, uint64_t addr) {
+    return *(uint32_t *)(state->mem + addr);
+}
+
+uint64_t Read64(State *state, uint64_t addr) {
+    return *(uint64_t *)(state->mem + addr);
+}
+
 void WriteCSR(State *state, uint16_t csr, uint8_t start_bit, uint8_t end_bit, uint64_t val) {
     assert(start_bit <= end_bit);
     
@@ -423,7 +482,7 @@ void ExecLb(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     int32_t offset = Sext(instr >> 20 & SetNBits(12), 11);
 
-    state->x[rd] = Sext(*(int8_t *)(state->mem + state->x[rs1] + offset), 7);
+    state->x[rd] = Sext(Read8(state, state->x[rs1] + offset), 7);
 }
 
 void ExecLh(State *state, uint32_t instr) {
@@ -431,7 +490,7 @@ void ExecLh(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     int32_t offset = Sext(instr >> 20 & SetNBits(12), 11);
 
-    state->x[rd] = Sext(*(int16_t *)(state->mem + state->x[rs1] + offset), 15);
+    state->x[rd] = Sext(Read16(state, state->x[rs1] + offset), 15);
 }
 
 void ExecLw(State *state, uint32_t instr) {
@@ -439,7 +498,7 @@ void ExecLw(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     int32_t offset = Sext(instr >> 20 & SetNBits(12), 11);
 
-    state->x[rd] = Sext(*(int32_t *)(state->mem + state->x[rs1] + offset), 31);
+    state->x[rd] = Sext(Read32(state, state->x[rs1] + offset), 31);
 }
 
 void ExecLd(State *state, uint32_t instr) {
@@ -447,7 +506,7 @@ void ExecLd(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     int32_t offset = Sext(instr >> 20 & SetNBits(12), 11);
 
-    state->x[rd] = *(int64_t *)(state->mem + state->x[rs1] + offset);
+    state->x[rd] = Read64(state, state->x[rs1] + offset);
 }
 
 void ExecLbu(State *state, uint32_t instr) {
@@ -455,7 +514,7 @@ void ExecLbu(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     int32_t offset = Sext(instr >> 20 & SetNBits(12), 11);
 
-    state->x[rd] = *(uint8_t *)(state->mem + state->x[rs1] + offset);
+    state->x[rd] = Read8(state, state->x[rs1] + offset);
 }
 
 void ExecLhu(State *state, uint32_t instr) {
@@ -463,7 +522,7 @@ void ExecLhu(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     int32_t offset = Sext(instr >> 20 & SetNBits(12), 11);
 
-    state->x[rd] = *(uint16_t *)(state->mem + state->x[rs1] + offset);
+    state->x[rd] = Read16(state, state->x[rs1] + offset);
 }
 
 void ExecLwu(State *state, uint32_t instr) {
@@ -471,7 +530,7 @@ void ExecLwu(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     int32_t offset = Sext(instr >> 20 & SetNBits(12), 11);
 
-    state->x[rd] = *(uint32_t *)(state->mem + state->x[rs1] + offset);
+    state->x[rd] = Read32(state, state->x[rs1] + offset);
 }
 
 void ExecLoadInstr(State *state, uint32_t instr) {
@@ -510,8 +569,7 @@ void ExecSb(State *state, uint32_t instr) {
     int32_t offset = Sext(
         ((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
 
-    *(uint8_t *)(state->mem + state->x[rs1] + offset) =
-        (uint8_t)(state->x[rs2] & SetNBits(8));
+    Write8(state, state->x[rs1] + offset, (uint8_t)(state->x[rs2] & SetNBits(8)));
 }
 
 void ExecSh(State *state, uint32_t instr) {
@@ -520,8 +578,7 @@ void ExecSh(State *state, uint32_t instr) {
     int32_t offset = Sext(
         ((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
 
-    *(uint16_t *)(state->mem + state->x[rs1] + offset) =
-        (uint16_t)(state->x[rs2] & SetNBits(16));
+    Write16(state, state->x[rs1] + offset, (uint16_t)(state->x[rs2] & SetNBits(16)));
 }
 
 void ExecSw(State *state, uint32_t instr) {
@@ -530,8 +587,7 @@ void ExecSw(State *state, uint32_t instr) {
     int32_t offset = Sext(
         ((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
 
-    *(uint32_t *)(state->mem + state->x[rs1] + offset) =
-        (uint32_t)state->x[rs2];
+    Write32(state, state->x[rs1] + offset, (uint32_t)state->x[rs2]);
 }
 
 void ExecSd(State *state, uint32_t instr) {
@@ -540,8 +596,7 @@ void ExecSd(State *state, uint32_t instr) {
     int32_t offset = Sext(
         ((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
 
-    *(uint64_t *)(state->mem + state->x[rs1] + offset) =
-        (uint64_t)state->x[rs2];
+    Write64(state, state->x[rs1] + offset, (uint64_t)state->x[rs2]);
 }
 
 void ExecStoreInstr(State *state, uint32_t instr) {
@@ -869,7 +924,7 @@ void ExecCLw(State *state, uint16_t instr) {
     uint8_t rd = (instr >> 2) & SetNBits(3);
 
     state->x[8 + rd] =
-        Sext(*(int32_t *)(state->mem + state->x[8 + rs1] + uimm), 31);
+        Sext(Read32(state, state->x[8 + rs1] + uimm), 31);
 }
 
 void ExecCLd(State *state, uint32_t instr) {
@@ -879,7 +934,7 @@ void ExecCLd(State *state, uint32_t instr) {
     uint8_t rd = instr >> 2 & SetNBits(3);
 
     state->x[8 + rd] =
-        Sext(*(int64_t *)(state->mem + state->x[8 + rs1] + uimm), 31);
+        Sext(Read64(state, state->x[8 + rs1] + uimm), 31);
 }
 
 void ExecCSw(State *state, uint16_t instr) {
@@ -889,7 +944,7 @@ void ExecCSw(State *state, uint16_t instr) {
     uint8_t rs1 = (instr >> 7) & SetNBits(3);
     uint8_t rs2 = (instr >> 2) & SetNBits(3);
 
-    *(uint32_t *)(state->mem + state->x[8 + rs1] + uimm) = state->x[8 + rs2];
+    Write32(state, state->x[8 + rs1] + uimm, state->x[8 + rs2]);
 }
 
 void ExecCSd(State *state, uint32_t instr) {
@@ -899,7 +954,7 @@ void ExecCSd(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 7) & SetNBits(3);
     uint8_t rs2 = (instr >> 2) & SetNBits(3);
 
-    *(uint64_t *)(state->mem + state->x[8 + rs1] + uimm) = state->x[8 + rs2];
+    Write64(state, state->x[8 + rs1] + uimm, state->x[8 + rs2]);
 }
 
 void ExecCAddi(State *state, uint16_t instr) {

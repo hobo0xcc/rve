@@ -65,7 +65,7 @@ void TakeTrap(State *state) {
 
 void CPUMain(State *state, uint64_t start_addr, size_t code_size, bool is_debug) {
     uint64_t count = 0;
-    for (state->pc = start_addr; state->pc != UINT64_MAX;) {
+    for (state->pc = start_addr; state->pc != (uint64_t)(-2);) {
         count++;
         if (is_debug && count >= 10000) return;
         ExecInstruction(state, *(uint32_t *)(state->mem + state->pc));
@@ -109,7 +109,7 @@ int main(int argc, char **argv) {
 
     uint64_t addr = LoadElf(state, size, bin);
 
-    state->x[1] = UINT64_MAX;
+    state->x[1] = (uint64_t)(-2);
 
     CPUMain(state, addr, size, is_debug);
 
