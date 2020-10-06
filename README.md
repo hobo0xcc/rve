@@ -1,6 +1,6 @@
 # rve: RISC-V Emulator written in C
 
-rve is a RISC-V Emulator written in C which implements RV64IMC currently and created from scratch.
+rve is a RISC-V Emulator written in C which implements RV64IMAC currently and created from scratch.
 `rve` is an abbreviation of "Risc-V Emulator".
 
 # Build
