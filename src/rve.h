@@ -24,6 +24,7 @@ enum OpCode {
     OP_32 = 0x3b,
     SYSTEM = 0x73,
     MISC_MEM = 0x0f,
+    AMO = 0x2f,
 };
 
 enum Exception {

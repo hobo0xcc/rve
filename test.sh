@@ -21,10 +21,10 @@ run_test() {
 }
 
 run_test_isa() {
-    files=`find ./test/riscv-tests -not -name "*.dump" | grep rv64ui-p-`
+    files=${1}
     failed=()
     for file in $files ; do
-        ./bin/rve --debug $file &> /dev/null
+        ./bin/rve --debug "$file" &> /dev/null
         if [ "$?" != "1" ]; then
             echo "$file: fail"
             failed+=($file)
@@ -44,7 +44,9 @@ run_test_isa() {
     fi
 }
 
-run_test_isa
+run_test_isa "`find ./test/riscv-tests -not -name "*.dump" | grep rv64ui-p-`"
+run_test_isa "`find ./test/riscv-tests -not -name "*.dump" | grep rv64um-p-`"
+run_test_isa "`find ./test/riscv-tests -not -name "*.dump" | grep rv64ua-p-`"
 
 cd test
 make clean &> /dev/null

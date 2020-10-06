@@ -68,6 +68,10 @@ void CPUMain(State *state, uint64_t start_addr, size_t code_size, bool is_debug)
     for (state->pc = start_addr; state->pc != (uint64_t)(-2);) {
         count++;
         if (is_debug && count >= 10000) return;
+        if (state->pc == 0) {
+            break;
+        }
+        // printf("pc: %llx\n", state->pc);
         ExecInstruction(state, *(uint32_t *)(state->mem + state->pc));
         state->x[0] = 0;
         if (state->excepted) {

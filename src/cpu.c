@@ -1,5 +1,6 @@
 #include "rve.h"
 #include <stdint.h>
+#include <stdio.h>
 
 int64_t SetNBits(int32_t n) {
     if (n == 64) return ~((uint64_t)0);
@@ -11,7 +12,13 @@ int64_t SetOneBit(int i) { return (1 << i); }
 void UartWrite(State *state, uint64_t offset, uint8_t ch) {
     if (offset == 0) {
         state->uart_mem[offset] = ch;
-        printf("%c", ch);
+        if (state->uart_mem[3] & SetOneBit(7)) {
+            return;
+        }
+        // printf("%d: ", ch);
+        putc(ch, stdout);
+        // putc('\n', stdout);
+        fflush(stdout);
     } else {
         state->uart_mem[offset] = ch;
     }
@@ -19,9 +26,12 @@ void UartWrite(State *state, uint64_t offset, uint8_t ch) {
 
 uint8_t UartRead(State *state, uint64_t offset) {
     if (offset == 0) {
+        if (state->uart_mem[3] & SetOneBit(7)) {
+            return state->uart_mem[offset];
+        }
         uint8_t ch = getc(stdin);
         state->uart_mem[offset] = ch;
-        return state->uart_mem[offset];
+        return ch;
     } else {
         return state->uart_mem[offset];
     }
@@ -325,7 +335,11 @@ void ExecDiv(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
-    state->x[rd] = state->x[rs1] / state->x[rs2];
+    if (state->x[rs2] == 0) {
+        state->x[rd] = -1;
+    } else {
+        state->x[rd] = state->x[rs1] / state->x[rs2];
+    }
 }
 
 void ExecSrl(State *state, uint32_t instr) {
@@ -343,7 +357,11 @@ void ExecDivu(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
-    state->x[rd] = (uint64_t)state->x[rs1] / (uint64_t)state->x[rs2];
+    if (state->x[rs2] == 0) {
+        state->x[rd] = ~((uint64_t)0);
+    } else {
+        state->x[rd] = (uint64_t)state->x[rs1] / (uint64_t)state->x[rs2];
+    }
 }
 
 void ExecSra(State *state, uint32_t instr) {
@@ -368,7 +386,11 @@ void ExecRem(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
-    state->x[rd] = state->x[rs1] % state->x[rs2];
+    if (state->x[rs2] == 0) {
+        state->x[rd] = state->x[rs1];
+    } else {
+        state->x[rd] = state->x[rs1] % state->x[rs2];
+    }
 }
 
 void ExecAnd(State *state, uint32_t instr) {
@@ -384,7 +406,11 @@ void ExecRemu(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
-    state->x[rd] = (uint64_t)state->x[rs1] % (uint64_t)state->x[rs2];
+    if (state->x[rs2] == 0) {
+        state->x[rd] = state->x[rs1];
+    } else {
+        state->x[rd] = (uint64_t)state->x[rs1] % (uint64_t)state->x[rs2];
+    }
 }
 
 void ExecOpInstr(State *state, uint32_t instr) {
@@ -829,7 +855,11 @@ void ExecDivw(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
-    state->x[rd] = Sext((state->x[rs1] / state->x[rs2]) & SetNBits(32), 31);
+    if (state->x[rs2] == 0) {
+        state->x[rs2] = -1;
+    } else {
+        state->x[rd] = Sext((state->x[rs1] / state->x[rs2]) & SetNBits(32), 31);
+    }
 }
 
 void ExecSrlw(State *state, uint32_t instr) {
@@ -838,6 +868,18 @@ void ExecSrlw(State *state, uint32_t instr) {
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
     state->x[rd] = Sext((uint32_t)state->x[rs1] >> state->x[rs2], 32);
+}
+
+void ExecDivuw(State *state, uint32_t instr) {
+    uint8_t rd = (instr >> 7) & SetNBits(5);
+    uint8_t rs1 = (instr >> 15) & SetNBits(5);
+    uint8_t rs2 = (instr >> 20) & SetNBits(5);
+
+    if (state->x[rs2] == 0) {
+        state->x[rd] = ~((uint64_t)0);
+    } else {
+        state->x[rd] = Sext((state->x[rs1] & SetNBits(32)) / (state->x[rs2] & SetNBits(32)), 31);
+    }
 }
 
 void ExecSraw(State *state, uint32_t instr) {
@@ -854,7 +896,11 @@ void ExecRemw(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
-    state->x[rd] = Sext((state->x[rs1] % state->x[rs2]) & SetNBits(32), 31);
+    if (state->x[rs2] == 0) {
+        state->x[rd] = state->x[rs1];
+    } else {
+        state->x[rd] = Sext((state->x[rs1] % state->x[rs2]) & SetNBits(32), 31);
+    }
 }
 
 void ExecRemuw(State *state, uint32_t instr) {
@@ -862,8 +908,12 @@ void ExecRemuw(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
-    state->x[rd] = Sext(
-        (state->x[rs1] & SetNBits(32)) % (state->x[rs2] & SetNBits(32)), 31);
+    if (state->x[rs2] == 0) {
+        state->x[rd] = state->x[rs1];
+    } else {
+        state->x[rd] = Sext(
+            (state->x[rs1] & SetNBits(32)) % (state->x[rs2] & SetNBits(32)), 31);
+    }
 }
 
 void ExecOp32Instr(State *state, uint32_t instr) {
@@ -891,6 +941,8 @@ void ExecOp32Instr(State *state, uint32_t instr) {
     case 0x5:
         if (funct7 == 0x00) {
             ExecSrlw(state, instr);
+        } else if (funct7 == 0x01) {
+            ExecDivuw(state, instr);
         } else if (funct7 == 0x20) {
             ExecSraw(state, instr);
         }
@@ -964,7 +1016,7 @@ void ExecCAddi(State *state, uint16_t instr) {
     if (imm == 0) {
         Error("Invalid c.addi immediate");
     }
-    uint8_t rd = (instr >> 7) & SetNBits(5);
+    uint8_t rd = instr >> 7 & SetNBits(5);
 
     state->x[rd] = state->x[rd] + imm;
 }
@@ -1051,7 +1103,7 @@ void ExecCJ(State *state, uint16_t instr) {
 void ExecCBeqz(State *state, uint16_t instr) {
     uint8_t rs1 = (instr >> 7) & SetNBits(3);
     int32_t imm = Sext(((instr >> 12 & SetNBits(1)) << 8) |
-                           ((instr >> 4 & SetNBits(2)) << 6) |
+                           ((instr >> 5 & SetNBits(2)) << 6) |
                            ((instr >> 2 & SetNBits(1)) << 5) |
                            ((instr >> 10 & SetNBits(2)) << 3) |
                            ((instr >> 3 & SetNBits(2)) << 1),
@@ -1066,7 +1118,7 @@ void ExecCBeqz(State *state, uint16_t instr) {
 void ExecCBnez(State *state, uint16_t instr) {
     uint8_t rs1 = (instr >> 7) & SetNBits(3);
     int32_t imm = Sext(((instr >> 12 & SetNBits(1)) << 8) |
-                           ((instr >> 4 & SetNBits(2)) << 6) |
+                           ((instr >> 5 & SetNBits(2)) << 6) |
                            ((instr >> 2 & SetNBits(1)) << 5) |
                            ((instr >> 10 & SetNBits(2)) << 3) |
                            ((instr >> 3 & SetNBits(2)) << 1),
@@ -1240,6 +1292,7 @@ void ExecCompressedInstr(State *state, uint16_t instr) {
         uint8_t funct2_1 = (instr >> 10) & SetNBits(2);
         uint8_t funct2_2 = (instr >> 5) & SetNBits(2);
         uint8_t funct6 = (instr >> 10) & SetNBits(6);
+        uint8_t rd = instr >> 7 & SetNBits(5);
 
         if (funct6 == 0x23 && funct2_2 == 0x0) {
             ExecCSub(state, instr);
@@ -1259,16 +1312,19 @@ void ExecCompressedInstr(State *state, uint16_t instr) {
         } else if (funct6 == 0x27 && funct2_2 == 0x1) {
             ExecCAddw(state, instr);
             state->pc += 2;
-        } else if (funct3 == 0x0) {
+        } else if (funct3 == 0x0 && rd == 0) {
+            // C.NOP
+            state->pc += 2;
+        } else if (funct3 == 0x0 && rd != 0x0) {
             ExecCAddi(state, instr);
             state->pc += 2;
-        } else if (funct3 == 0x1) {
+        } else if (funct3 == 0x1 && rd != 0x0) {
             ExecCAddiw(state, instr);
             state->pc += 2;
         } else if (funct3 == 0x2) {
             ExecCLi(state, instr);
             state->pc += 2;
-        } else if (funct3 == 0x3 && immediate != 0 && r1 == 2) {
+        } else if (funct3 == 0x3 && rd == 2) {
             ExecCAddi16sp(state, instr);
             state->pc += 2;
         } else if (funct3 == 0x3) {
@@ -1520,6 +1576,381 @@ void ExecMiscMem(State *state, uint32_t instr) {
     }
 }
 
+void ExecAmoaddw(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Sext(Read32(state, state->x[rs1]), 31);
+    Write32(state, state->x[rs1], (uint32_t)(t + state->x[rs2]));
+    state->x[rd] = t;
+}
+
+void ExecAmoswapw(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Sext(Read32(state, state->x[rs1]), 31);
+    Write32(state, state->x[rs1], (uint32_t)(state->x[rs2]));
+    state->x[rd] = t;
+}
+
+void ExecLrw(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    state->x[rd] = Sext(Read32(state, state->x[rs1]), 31);
+}
+
+void ExecScw(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    Write32(state, state->x[rs1], (uint32_t)(state->x[rs2]));
+    state->x[rd] = 0;
+}
+
+void ExecAmoxorw(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Sext(Read32(state, state->x[rs1]), 31);
+    Write32(state, state->x[rs1], (uint32_t)(t ^ state->x[rs2]));
+    state->x[rd] = t;
+}
+
+void ExecAmoorw(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Sext(Read32(state, state->x[rs1]), 31);
+    Write32(state, state->x[rs1], (uint32_t)(t | state->x[rs2]));
+    state->x[rd] = t;
+}
+
+void ExecAmoandw(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Sext(Read32(state, state->x[rs1]), 31);
+    Write32(state, state->x[rs1], (uint32_t)(t | state->x[rs2]));
+    state->x[rd] = t;
+}
+
+void ExecAmominw(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Sext(Read32(state, state->x[rs1]), 31);
+    if (t < state->x[rs2]) {
+        Write32(state, state->x[rs1], (uint32_t)t);
+    } else {
+        Write32(state, state->x[rs1], (uint32_t)(state->x[rs2]));
+    }
+    state->x[rd] = t;
+}
+
+void ExecAmomaxw(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Sext(Read32(state, state->x[rs1]), 31);
+    if (t > state->x[rs2]) {
+        Write32(state, state->x[rs1], (uint32_t)t);
+    } else {
+        Write32(state, state->x[rs1], (uint32_t)(state->x[rs2]));
+    }
+    state->x[rd] = t;
+}
+
+void ExecAmominuw(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Sext(Read32(state, state->x[rs1]), 31);
+    if ((uint64_t)t < (uint64_t)(state->x[rs2])) {
+        Write32(state, state->x[rs1], (uint32_t)t);
+    } else {
+        Write32(state, state->x[rs1], (uint32_t)(state->x[rs2]));
+    }
+    state->x[rd] = t;
+}
+
+void ExecAmomaxuw(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Sext(Read32(state, state->x[rs1]), 31);
+    if ((uint64_t)t > (uint64_t)(state->x[rs2])) {
+        Write32(state, state->x[rs1], (uint32_t)t);
+    } else {
+        Write32(state, state->x[rs1], (uint32_t)(state->x[rs2]));
+    }
+    state->x[rd] = t;
+}
+
+void ExecAmoaddd(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Read64(state, state->x[rs1]);
+    Write64(state, state->x[rs1], (uint64_t)(t + rs2));
+    state->x[rd] = t;
+}
+
+void ExecAmoswapd(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Read64(state, state->x[rs1]);
+    Write64(state, state->x[rs1], (uint64_t)(state->x[rs2]));
+    state->x[rd] = t;
+}
+
+void ExecLrd(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Read64(state, state->x[rs1]);
+    state->x[rd] = t;
+}
+
+void ExecScd(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Read64(state, state->x[rs1]);
+    Write64(state, state->x[rs1], (uint64_t)(state->x[rs2]));
+    state->x[rd] = 0;
+}
+
+void ExecAmoxord(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Read64(state, state->x[rs1]);
+    Write64(state, state->x[rs1], (uint64_t)(t ^ state->x[rs2]));
+    state->x[rd] = t;
+}
+
+void ExecAmoord(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Read64(state, state->x[rs1]);
+    Write64(state, state->x[rs1], (uint64_t)(t | state->x[rs2]));
+    state->x[rd] = t;
+}
+
+void ExecAmoandd(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Read64(state, state->x[rs1]);
+    Write64(state, state->x[rs1], (uint64_t)(t & state->x[rs2]));
+    state->x[rd] = t;
+}
+
+void ExecAmomind(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Read64(state, state->x[rs1]);
+    if (t < state->x[rs2]) {
+        Write64(state, state->x[rs1], (uint64_t)t);
+    } else {
+        Write64(state, state->x[rs1], (uint64_t)(state->x[rs2]));
+    }
+    state->x[rd] = t;
+}
+
+void ExecAmomaxd(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Read64(state, state->x[rs1]);
+    if (t > state->x[rs2]) {
+        Write64(state, state->x[rs1], (uint64_t)t);
+    } else {
+        Write64(state, state->x[rs1], (uint64_t)(state->x[rs2]));
+    }
+    state->x[rd] = t;
+}
+
+void ExecAmominud(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Read64(state, state->x[rs1]);
+    if ((uint64_t)t < (uint64_t)(state->x[rs2])) {
+        Write64(state, state->x[rs1], (uint64_t)t);
+    } else {
+        Write64(state, state->x[rs1], (uint64_t)(state->x[rs2]));
+    }
+    state->x[rd] = t;
+}
+
+void ExecAmomaxud(State *state, uint32_t instr) {
+    uint8_t rd = instr >> 7 & SetNBits(5);
+    uint8_t rs1 = instr >> 15 & SetNBits(5);
+    uint8_t rs2 = instr >> 20 & SetNBits(5);
+    uint8_t rl = instr >> 25 & SetNBits(1);
+    uint8_t aq = instr >> 26 & SetNBits(1);
+
+    int64_t t = Read64(state, state->x[rs1]);
+    if ((uint64_t)t > (uint64_t)(state->x[rs2])) {
+        Write64(state, state->x[rs1], (uint64_t)t);
+    } else {
+        Write64(state, state->x[rs1], (uint64_t)(state->x[rs2]));
+    }
+    state->x[rd] = t;
+}
+
+void ExecAmo(State *state, uint32_t instr) {
+    uint8_t funct5 = instr >> 27 & SetNBits(5);
+    uint8_t funct3 = instr >> 12 & SetNBits(3);
+
+    if (funct3 == 0x2) {
+        switch (funct5) {
+        case 0x00:
+            ExecAmoaddw(state, instr);
+            break;
+        case 0x01:
+            ExecAmoswapw(state, instr);
+            break;
+        case 0x02:
+            ExecLrw(state, instr);
+            break;
+        case 0x03:
+            ExecScw(state, instr);
+            break;
+        case 0x04:
+            ExecAmoxorw(state, instr);
+            break;
+        case 0x08:
+            ExecAmoorw(state, instr);
+            break;
+        case 0x0c:
+            ExecAmoandw(state, instr);
+            break;
+        case 0x10:
+            ExecAmominw(state, instr);
+            break;
+        case 0x14:
+            ExecAmomaxw(state, instr);
+            break;
+        case 0x18:
+            ExecAmominuw(state, instr);
+            break;
+        case 0x1c:
+            ExecAmomaxuw(state, instr);
+            break;
+        default:
+            Error("Unknown amo instruction: %.2x", funct5);
+            break;
+        }
+    } else if (funct3 == 0x3) {
+        switch (funct5) {
+        case 0x00:
+            ExecAmoaddd(state, instr);
+            break;
+        case 0x01:
+            ExecAmoswapd(state, instr);
+            break;
+        case 0x02:
+            ExecLrd(state, instr);
+            break;
+        case 0x03:
+            ExecScd(state, instr);
+            break;
+        case 0x04:
+            ExecAmoxord(state, instr);
+            break;
+        case 0x08:
+            ExecAmoord(state, instr);
+            break;
+        case 0x0c:
+            ExecAmoandd(state, instr);
+            break;
+        case 0x10:
+            ExecAmomind(state, instr);
+            break;
+        case 0x14:
+            ExecAmomaxd(state, instr);
+            break;
+        case 0x18:
+            ExecAmominud(state, instr);
+            break;
+        case 0x1c:
+            ExecAmomaxud(state, instr);
+            break;
+        default:
+            Error("Unknown amo instruction: %.2x", funct5);
+            break;
+        }
+    }
+}
+
 void ExecInstruction(State *state, uint32_t instr) {
     uint8_t opcode = instr & SetNBits(7);
     // If an instruction is compressed.
@@ -1576,6 +2007,10 @@ void ExecInstruction(State *state, uint32_t instr) {
         break;
     case MISC_MEM:
         ExecMiscMem(state, instr);
+        state->pc += sizeof(instr);
+        break;
+    case AMO:
+        ExecAmo(state, instr);
         state->pc += sizeof(instr);
         break;
     default:
