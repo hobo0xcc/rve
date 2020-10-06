@@ -3,7 +3,8 @@
 #include <stdio.h>
 
 int64_t SetNBits(int32_t n) {
-    if (n == 64) return ~((uint64_t)0);
+    if (n == 64)
+        return ~((uint64_t)0);
     return ((uint64_t)1 << n) - 1;
 }
 
@@ -77,16 +78,18 @@ uint64_t Read64(State *state, uint64_t addr) {
     return *(uint64_t *)(state->mem + addr);
 }
 
-void WriteCSR(State *state, uint16_t csr, uint8_t start_bit, uint8_t end_bit, uint64_t val) {
+void WriteCSR(State *state, uint16_t csr, uint8_t start_bit, uint8_t end_bit,
+              uint64_t val) {
     assert(start_bit <= end_bit);
-    
+
     uint64_t mask = SetNBits(end_bit - start_bit + 1);
     val &= mask;
     state->csr[csr] &= (~(mask << start_bit));
     state->csr[csr] |= (val << start_bit);
 }
 
-uint64_t ReadCSR(State *state, uint16_t csr, uint8_t start_bit, uint8_t end_bit) {
+uint64_t ReadCSR(State *state, uint16_t csr, uint8_t start_bit,
+                 uint8_t end_bit) {
     assert(start_bit <= end_bit);
 
     uint64_t mask = SetNBits(end_bit - start_bit + 1);
@@ -595,7 +598,8 @@ void ExecSb(State *state, uint32_t instr) {
     int32_t offset = Sext(
         ((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
 
-    Write8(state, state->x[rs1] + offset, (uint8_t)(state->x[rs2] & SetNBits(8)));
+    Write8(state, state->x[rs1] + offset,
+           (uint8_t)(state->x[rs2] & SetNBits(8)));
 }
 
 void ExecSh(State *state, uint32_t instr) {
@@ -604,7 +608,8 @@ void ExecSh(State *state, uint32_t instr) {
     int32_t offset = Sext(
         ((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
 
-    Write16(state, state->x[rs1] + offset, (uint16_t)(state->x[rs2] & SetNBits(16)));
+    Write16(state, state->x[rs1] + offset,
+            (uint16_t)(state->x[rs2] & SetNBits(16)));
 }
 
 void ExecSw(State *state, uint32_t instr) {
@@ -878,7 +883,9 @@ void ExecDivuw(State *state, uint32_t instr) {
     if (state->x[rs2] == 0) {
         state->x[rd] = ~((uint64_t)0);
     } else {
-        state->x[rd] = Sext((state->x[rs1] & SetNBits(32)) / (state->x[rs2] & SetNBits(32)), 31);
+        state->x[rd] = Sext((state->x[rs1] & SetNBits(32)) /
+                                (state->x[rs2] & SetNBits(32)),
+                            31);
     }
 }
 
@@ -911,8 +918,9 @@ void ExecRemuw(State *state, uint32_t instr) {
     if (state->x[rs2] == 0) {
         state->x[rd] = state->x[rs1];
     } else {
-        state->x[rd] = Sext(
-            (state->x[rs1] & SetNBits(32)) % (state->x[rs2] & SetNBits(32)), 31);
+        state->x[rd] = Sext((state->x[rs1] & SetNBits(32)) %
+                                (state->x[rs2] & SetNBits(32)),
+                            31);
     }
 }
 
@@ -975,8 +983,7 @@ void ExecCLw(State *state, uint16_t instr) {
     uint8_t rs1 = (instr >> 7) & SetNBits(3);
     uint8_t rd = (instr >> 2) & SetNBits(3);
 
-    state->x[8 + rd] =
-        Sext(Read32(state, state->x[8 + rs1] + uimm), 31);
+    state->x[8 + rd] = Sext(Read32(state, state->x[8 + rs1] + uimm), 31);
 }
 
 void ExecCLd(State *state, uint32_t instr) {
@@ -985,8 +992,7 @@ void ExecCLd(State *state, uint32_t instr) {
     uint8_t rs1 = instr >> 7 & SetNBits(3);
     uint8_t rd = instr >> 2 & SetNBits(3);
 
-    state->x[8 + rd] =
-        Sext(Read64(state, state->x[8 + rs1] + uimm), 31);
+    state->x[8 + rd] = Sext(Read64(state, state->x[8 + rs1] + uimm), 31);
 }
 
 void ExecCSw(State *state, uint16_t instr) {
@@ -1445,9 +1451,7 @@ void ExecSret(State *state, uint32_t instr) {
     WriteCSR(state, SSTATUS, 8, 8, 0);
 }
 
-void ExecUret(State *state, uint32_t instr) {
-    Error("Unimplemented.");
-}
+void ExecUret(State *state, uint32_t instr) { Error("Unimplemented."); }
 
 void ExecCsrrw(State *state, uint32_t instr) {
     uint8_t rd = instr >> 7 & SetNBits(5);
@@ -1535,8 +1539,7 @@ void ExecSystemInstr(State *state, uint32_t instr) {
                 is_pc_written = true;
             }
         }
-    }
-    break;
+    } break;
     case 0x1:
         ExecCsrrw(state, instr);
         break;
@@ -1563,9 +1566,7 @@ void ExecSystemInstr(State *state, uint32_t instr) {
         state->pc += sizeof(instr);
 }
 
-void ExecFence(State *state, uint32_t instr) {
-
-}
+void ExecFence(State *state, uint32_t instr) {}
 
 void ExecMiscMem(State *state, uint32_t instr) {
     uint8_t funct3 = instr >> 12 & SetNBits(3);

@@ -63,11 +63,13 @@ void TakeTrap(State *state) {
     state->mode = MACHINE;
 }
 
-void CPUMain(State *state, uint64_t start_addr, size_t code_size, bool is_debug) {
+void CPUMain(State *state, uint64_t start_addr, size_t code_size,
+             bool is_debug) {
     uint64_t count = 0;
     for (state->pc = start_addr; state->pc != (uint64_t)(-2);) {
         count++;
-        if (is_debug && count >= 10000) return;
+        if (is_debug && count >= 10000)
+            return;
         if (state->pc == 0) {
             break;
         }
