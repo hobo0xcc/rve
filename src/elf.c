@@ -27,10 +27,11 @@ uint64_t LoadElf(State *state, size_t size, uint8_t *bin) {
             uint8_t *text = (uint8_t *)(bin + shdr->sh_offset);
             size_t text_size = shdr->sh_size;
             char *name = (strtab + shdr->sh_name);
+            printf("%s: 0x%llx\n", name, virtual_addr);
             if (!strcmp(name, ".text"))
                 text_addr = virtual_addr;
 
-            LoadBinaryIntoMemory(state, text, text_size, virtual_addr);
+            LoadBinaryIntoMemory(state, text, text_size, virtual_addr - DRAM_BASE);
         }
     }
 

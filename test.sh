@@ -25,7 +25,7 @@ run_test_isa() {
     failed=()
     for file in $files ; do
         ./bin/rve --debug "$file" &> /dev/null
-        if [ "$?" != "1" ]; then
+        if [ "$?" != "0" ]; then
             echo "$file: fail"
             failed+=($file)
         else

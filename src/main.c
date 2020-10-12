@@ -27,7 +27,8 @@ void ResetState(State *state) {
     state->excepted = false;
     state->exception_code = 0;
     memset(state->csr, 0, sizeof(state->csr));
-    state->mode = 0x3;
+    state->uart_mem[5] |= 0x20;
+    state->mode = MACHINE;
 }
 
 void LoadBinaryIntoMemory(State *state, uint8_t *bin, size_t bin_size,
@@ -53,28 +54,48 @@ size_t ReadBinaryFile(const char *name, uint8_t **buf) {
 }
 
 void TakeTrap(State *state) {
-    state->csr[MEPC] = state->pc;
-    state->pc = state->csr[MTVEC];
-    state->csr[MCAUSE] = state->exception_code;
-    state->csr[MTVAL] = 0;
-    // Save current Mode into CSRs[mstatus].MPP.
-    WriteCSR(state, MSTATUS, 11, 12, state->mode);
-    // Move Into M-Mode.
-    state->mode = MACHINE;
+    uint8_t prev_mode = state->mode;
+    uint8_t cause = state->exception_code;
+    printf("Trap\n");
+    if (state->mode <= SUPERVISOR && state->csr[MEDELEG] >> cause & 1) {
+        state->mode = SUPERVISOR;
+        state->csr[SEPC] = state->pc;
+        state->pc = state->csr[STVEC] & ~1;
+        state->csr[MCAUSE] = state->exception_code;
+        state->csr[STVAL] = 0;
+        WriteCSR(state, SSTATUS, 5, 5, ReadCSR(state, SSTATUS, 1, 1));
+        WriteCSR(state, SSTATUS, 1, 1, 0);
+        if (prev_mode == USER) {
+            WriteCSR(state, SSTATUS, 8, 8, 0);
+        } else {
+            WriteCSR(state, SSTATUS, 8, 8, 1);
+        }
+    } else {
+        state->mode = MACHINE;
+        state->csr[MEPC] = state->pc;
+        state->pc = state->csr[MTVEC] & ~1;
+        state->csr[MCAUSE] = state->exception_code;
+        state->csr[MTVAL] = 0;
+        // Save current Mode into CSRs[mstatus].MPP.
+        WriteCSR(state, MSTATUS, 11, 12, prev_mode);
+    }
 }
 
 void CPUMain(State *state, uint64_t start_addr, size_t code_size,
              bool is_debug) {
     uint64_t count = 0;
-    for (state->pc = start_addr; state->pc != (uint64_t)(-2);) {
+    for (state->pc = start_addr; ;) {
         count++;
         if (is_debug && count >= 10000)
             return;
         if (state->pc == 0) {
             break;
         }
-        // printf("pc: %llx\n", state->pc);
-        ExecInstruction(state, *(uint32_t *)(state->mem + state->pc));
+        uint32_t instr = Fetch32(state, state->pc);
+        if (!state->excepted) {
+            printf("pc: %llx\n", state->pc);
+            ExecInstruction(state, instr);
+        }
         state->x[0] = 0;
         if (state->excepted) {
             TakeTrap(state);
@@ -89,10 +110,6 @@ void PrintRegisters(State *state, bool is_debug) {
         printf("x%d:\t %lld\n", i, state->x[i]);
     }
     printf("pc: %llx\n", state->pc);
-
-    if (is_debug) {
-        printf("tohost: %d\n", *(uint32_t *)(state->mem + state->x[30] - 60));
-    }
 }
 
 int main(int argc, char **argv) {
@@ -110,7 +127,7 @@ int main(int argc, char **argv) {
 
     uint8_t *bin;
     size_t size = ReadBinaryFile(argv[prog_name_idx], &bin);
-    State *state = NewState(0x7A12000);
+    State *state = NewState(0x8010000/*0x7A12000*/);
     ResetState(state);
 
     uint64_t addr = LoadElf(state, size, bin);
@@ -121,11 +138,7 @@ int main(int argc, char **argv) {
 
     PrintRegisters(state, is_debug);
     int32_t result;
-    if (is_debug) {
-        result = state->x[3];
-    } else {
-        result = state->x[10];
-    }
+    result = state->x[10];
 
     free(bin);
     free(state->mem);

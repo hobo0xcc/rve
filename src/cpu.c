@@ -10,6 +10,15 @@ int64_t SetNBits(int32_t n) {
 
 int64_t SetOneBit(int i) { return (1 << i); }
 
+uint64_t GetRange(uint64_t v, uint64_t start, uint64_t end) {
+    if (start < 0 || end >= 64) {
+        Error("Out of range: GetRange");
+    }
+    
+    uint64_t mask = SetNBits(end - start + 1);
+    return (v & (mask << start)) >> start;
+}
+
 void UartWrite(State *state, uint64_t offset, uint8_t ch) {
     if (offset == 0) {
         state->uart_mem[offset] = ch;
@@ -38,44 +47,283 @@ uint8_t UartRead(State *state, uint64_t offset) {
     }
 }
 
-void Write8(State *state, uint64_t addr, uint8_t val) {
+void MemWrite8(State *state, uint64_t addr, uint8_t val) {
     if (addr >= UART_BASE && addr <= UART_BASE + UART_SIZE) {
         UartWrite(state, addr - UART_BASE, val);
     } else {
-        *(uint8_t *)(state->mem + addr) = val;
+        *(uint8_t *)(state->mem + (addr - DRAM_BASE)) = val;
     }
 }
 
-void Write16(State *state, uint64_t addr, uint16_t val) {
-    *(uint16_t *)(state->mem + addr) = val;
+void MemWrite16(State *state, uint64_t addr, uint16_t val) {
+    *(uint16_t *)(state->mem + (addr - DRAM_BASE)) = val;
 }
 
-void Write32(State *state, uint64_t addr, uint32_t val) {
-    *(uint32_t *)(state->mem + addr) = val;
+void MemWrite32(State *state, uint64_t addr, uint32_t val) {
+    *(uint32_t *)(state->mem + (addr - DRAM_BASE)) = val;
 }
 
-void Write64(State *state, uint64_t addr, uint64_t val) {
-    *(uint64_t *)(state->mem + addr) = val;
+void MemWrite64(State *state, uint64_t addr, uint64_t val) {
+    *(uint64_t *)(state->mem + (addr - DRAM_BASE)) = val;
 }
 
-uint8_t Read8(State *state, uint64_t addr) {
+uint8_t MemRead8(State *state, uint64_t addr) {
     if (addr >= UART_BASE && addr <= UART_BASE + UART_SIZE) {
         return UartRead(state, addr - UART_BASE);
     } else {
-        return *(uint8_t *)(state->mem + addr);
+        return *(uint8_t *)(state->mem + (addr - DRAM_BASE));
     }
 }
 
-uint8_t Read16(State *state, uint64_t addr) {
-    return *(uint16_t *)(state->mem + addr);
+uint16_t MemRead16(State *state, uint64_t addr) {
+    return *(uint16_t *)(state->mem + (addr - DRAM_BASE));
 }
 
-uint32_t Read32(State *state, uint64_t addr) {
-    return *(uint32_t *)(state->mem + addr);
+uint32_t MemRead32(State *state, uint64_t addr) {
+    return *(uint32_t *)(state->mem + (addr - DRAM_BASE));
 }
 
-uint64_t Read64(State *state, uint64_t addr) {
-    return *(uint64_t *)(state->mem + addr);
+uint64_t MemRead64(State *state, uint64_t addr) {
+    if (addr >= DRAM_BASE) {
+        return *(uint64_t *)(state->mem + (addr - DRAM_BASE));
+    }
+
+    state->excepted = true;
+    state->exception_code = InstructionAccessFault;
+    return 0;
+}
+
+void AccessFault(State *state, uint8_t access_type) {
+    state->excepted = true;
+    switch (access_type) {
+    case AccessInstruction:
+        state->exception_code = InstructionAccessFault;
+        break;
+    case AccessLoad:
+        state->exception_code = LoadAccessFault;
+        break;
+    case AccessStore:
+        state->exception_code = StoreAMOAccessFault;
+        break;
+    default:
+        Error("Unknown access type: %d", access_type);
+        break;
+    }
+}
+
+void PageFault(State *state, uint8_t access_type) {
+    state->excepted = true;
+    switch (access_type) {
+    case AccessInstruction:
+        state->exception_code = InstructionPageFault;
+        break;
+    case AccessLoad:
+        state->exception_code = LoadPageFault;
+        break;
+    case AccessStore:
+        state->exception_code = StoreAMOPageFault;
+        break;
+    default:
+        Error("Unknown access type: %d", access_type);
+        break;
+    }
+}
+
+uint64_t Translate(State *state, uint64_t v_addr, uint8_t access_type) {
+    uint8_t MODE = ReadCSR(state, SATP, 60, 63);
+
+    if (MODE == Bare || state->mode == MACHINE) {
+        return v_addr;
+    }
+    if (MODE != Sv39) {
+        Error("Unimplemented Translation Mode: %d", MODE);
+    }
+
+    uint64_t a;
+    int64_t i;
+    bool access_fault;
+    bool page_fault;
+    uint64_t PPN;
+    uint64_t va_vpn_i;
+    uint64_t pte;
+    uint8_t pte_v;
+    uint8_t pte_r;
+    uint8_t pte_w;
+    uint8_t pte_x;
+    uint8_t pte_u;
+    uint8_t pte_g;
+    uint8_t pte_a;
+    uint8_t pte_d;
+    uint8_t pte_rsw;
+    uint64_t pte_ppn;
+    uint64_t pa;
+step_1:
+    page_fault = false;
+    uint64_t v_addr_empty = (v_addr & (SetNBits(XLEN - VALEN) << VALEN)) >> VALEN;
+    if ((v_addr & SetOneBit(VALEN - 1)) == 1 && v_addr_empty != SetNBits(25)) {
+        page_fault = true;
+    } else if ((v_addr & SetOneBit(VALEN - 1)) == 0 && v_addr_empty != 0) {
+        page_fault = true;
+    }
+    if (page_fault) {
+        PageFault(state, access_type);
+        return v_addr;
+    }
+
+step2:
+    PPN = ReadCSR(state, SATP, 0, 43);
+    a = PPN * PAGESIZE;
+    i = LEVELS - 1;
+
+step3:
+    va_vpn_i = ((v_addr >> 12) >> (i * 9)) & SetNBits(9);
+    pte = MemRead64(state, a + va_vpn_i * PTESIZE);
+
+step4:
+    pte_v = pte & SetNBits(1);
+    pte_r = pte >> 1 & SetNBits(1);
+    pte_w = pte >> 2 & SetNBits(1);
+    pte_x = pte >> 3 & SetNBits(1);
+    pte_u = pte >> 4 & SetNBits(1);
+    pte_g = pte >> 5 & SetNBits(1);
+    pte_a = pte >> 6 & SetNBits(1);
+    pte_d = pte >> 7 & SetNBits(1);
+    pte_ppn = pte >> 10;
+    pte_rsw = pte >> 8 & SetNBits(2);
+    if (pte_v == 0 || (pte_r == 0 && pte_w == 1)) {
+        PageFault(state, access_type);
+        return v_addr;
+    }
+
+step5:
+    // If pte.r=1 or pte.x=1, go to step 6. 
+    if (pte_r == 1 || pte_x == 1) {
+        goto step6;
+    } else {
+        i--;
+        if (i < 0) {
+            PageFault(state, access_type);
+            return v_addr;
+        } else {
+            a =  pte_ppn * PAGESIZE;
+            goto step3;
+        }
+    }
+
+step6:
+    page_fault = false;
+    // When SUM=0, S-mode memory accesses to pages that areaccessible by U-mode (U=1 in Figure 4.17) will fault. 
+    if (ReadCSR(state, MSTATUS, 18, 18) == 0 && pte_u == 1) {
+        page_fault = true;
+    }
+    if (access_type == AccessInstruction) {
+        if (pte_x == 0 || pte_r == 0) {
+            page_fault = true;
+        }
+    }
+    if (access_type == AccessLoad) {
+        if (ReadCSR(state, MSTATUS, 19, 19) == 0) {
+            if (pte_r == 0) {
+                page_fault = true;
+            }
+        }
+        if (ReadCSR(state, MSTATUS, 19, 19) == 1) {
+            if (pte_r == 0 || pte_x == 0) {
+                page_fault = true;
+            }
+        }
+    }
+    if (access_type == AccessStore) {
+        if (pte_r == 0 || pte_x == 0) {
+            page_fault = true;
+        }
+    }
+
+    if (page_fault) {
+        PageFault(state, access_type);
+        return v_addr;
+    }
+
+step7:
+    if (i > 0) {
+        if ((pte_ppn & SetNBits(9 * i)) != 0) {
+            page_fault = true;
+        }
+    }
+    if (page_fault) {
+        PageFault(state, access_type);
+        return v_addr;
+    }
+
+step8:
+    if (pte_a == 0 || (access_type == AccessStore && pte_d == 0)) {
+        PageFault(state, access_type);
+        return v_addr;
+    }
+
+step9:
+    pa = 0;
+    pa |= (v_addr & SetNBits(12));
+    if (i > 0) {
+        pa |= (v_addr >> 12 & SetNBits(9 * i)) << 12;
+    }
+    pa |= (pte_ppn & (SetNBits(44) ^ SetNBits(9 * i))) << 12;
+    printf("va: 0x%llx -> pa: 0x%llx\n", v_addr, pa);
+    return pa;
+}
+
+void Write8(State *state, uint64_t v_addr, uint8_t val) {
+    uint64_t p_addr = Translate(state, v_addr, AccessStore);
+    if (state->excepted) return;
+    MemWrite8(state, p_addr, val);
+}
+
+void Write16(State *state, uint64_t v_addr, uint16_t val)  {
+    uint64_t p_addr = Translate(state, v_addr, AccessStore);
+    if (state->excepted) return;
+    MemWrite16(state, p_addr, val);
+}
+
+void Write32(State *state, uint64_t v_addr, uint32_t val)  {
+    uint64_t p_addr = Translate(state, v_addr, AccessStore);
+    if (state->excepted) return;
+    MemWrite32(state, p_addr, val);
+}
+
+void Write64(State *state, uint64_t v_addr, uint64_t val)  {
+    uint64_t p_addr = Translate(state, v_addr, AccessStore);
+    if (state->excepted) return;
+    MemWrite64(state, p_addr, val);
+}
+
+uint8_t Read8(State *state, uint64_t v_addr) {
+    uint64_t p_addr = Translate(state, v_addr, AccessLoad);
+    if (state->excepted) return 0;
+    return MemRead8(state, p_addr);
+}
+
+uint16_t Read16(State *state, uint64_t v_addr) {
+    uint64_t p_addr = Translate(state, v_addr, AccessLoad);
+    if (state->excepted) return 0;
+    return MemRead16(state, p_addr);
+}
+
+uint32_t Read32(State *state, uint64_t v_addr) {
+    uint64_t p_addr = Translate(state, v_addr, AccessLoad);
+    if (state->excepted) return 0;
+    return MemRead32(state, p_addr);
+}
+
+uint64_t Read64(State *state, uint64_t v_addr) {
+    uint64_t p_addr = Translate(state, v_addr, AccessLoad);
+    if (state->excepted) return 0;
+    return MemRead64(state, p_addr);
+}
+
+uint32_t Fetch32(State *state, uint64_t v_addr) {
+    uint64_t p_addr = Translate(state, v_addr, AccessInstruction);
+    if (state->excepted) return 0;
+    return MemRead32(state, p_addr);
 }
 
 void WriteCSR(State *state, uint16_t csr, uint8_t start_bit, uint8_t end_bit,
@@ -138,7 +386,7 @@ void ExecAddi(State *state, uint32_t instr) {
 void ExecSlli(State *state, uint32_t instr) {
     uint8_t rd = instr >> 7 & SetNBits(5);
     uint8_t rs1 = instr >> 15 & SetNBits(5);
-    uint8_t immediate = (instr >> 20) & SetNBits(5);
+    uint8_t immediate = instr >> 20 & SetNBits(6);
 
     state->x[rd] = (uint64_t)state->x[rs1] << (uint64_t)immediate;
 }
@@ -170,7 +418,7 @@ void ExecXori(State *state, uint32_t instr) {
 void ExecSrli(State *state, uint32_t instr) {
     uint8_t rd = (instr >> 7) & SetNBits(5);
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
-    uint8_t immediate = (instr >> 20) & SetNBits(5);
+    uint8_t immediate = (instr >> 20) & SetNBits(6);
 
     state->x[rd] = (uint64_t)state->x[rs1] >> (uint64_t)immediate;
 }
@@ -178,7 +426,7 @@ void ExecSrli(State *state, uint32_t instr) {
 void ExecSrai(State *state, uint32_t instr) {
     uint8_t rd = (instr >> 7) & SetNBits(5);
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
-    uint8_t immediate = (instr >> 20) & SetNBits(5);
+    uint8_t immediate = (instr >> 20) & SetNBits(6);
 
     state->x[rd] = state->x[rs1] >> immediate;
 }
@@ -186,7 +434,7 @@ void ExecSrai(State *state, uint32_t instr) {
 void ExecOri(State *state, uint32_t instr) {
     uint8_t rd = (instr >> 7) & SetNBits(5);
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
-    int32_t immediate = Sext((instr >> 20) & SetNBits(12), 11);
+    uint64_t immediate = Sext((instr >> 20) & SetNBits(12), 11);
 
     state->x[rd] = state->x[rs1] | immediate;
 }
@@ -228,6 +476,7 @@ void ExecOpImmInstr(State *state, uint32_t instr) {
         break;
     case 0x6:
         ExecOri(state, instr);
+        break;
     case 0x7:
         ExecAndi(state, instr);
         break;
@@ -322,7 +571,7 @@ void ExecMulhu(State *state, uint32_t instr) {
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
     state->x[rd] =
-        ((__uint128_t)state->x[rs1] * (__uint128_t)state->x[rs2]) >> XLEN;
+        (int64_t)(((__int128_t)state->x[rs1] * (__int128_t)state->x[rs2]) >> XLEN);
 }
 
 void ExecXor(State *state, uint32_t instr) {
@@ -340,6 +589,8 @@ void ExecDiv(State *state, uint32_t instr) {
 
     if (state->x[rs2] == 0) {
         state->x[rd] = -1;
+    } else if (state->x[rs1] == -((int64_t)1 << 63) && state->x[rs2] == -1) {
+        state->x[rd] = -((int64_t)1 << 63);
     } else {
         state->x[rd] = state->x[rs1] / state->x[rs2];
     }
@@ -391,6 +642,8 @@ void ExecRem(State *state, uint32_t instr) {
 
     if (state->x[rs2] == 0) {
         state->x[rd] = state->x[rs1];
+    } else if (state->x[rs1] == -((int64_t)1 << 63) && state->x[rs2] == -1) {
+        state->x[rd] = 0;
     } else {
         state->x[rd] = state->x[rs1] % state->x[rs2];
     }
@@ -501,7 +754,7 @@ void ExecJalr(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     int32_t offset = Sext(instr >> 20 & SetNBits(12), 11);
 
-    int32_t t = state->pc + sizeof(instr);
+    uint64_t t = state->pc + sizeof(instr);
     state->pc = (state->x[rs1] + offset) & ~1;
     state->x[rd] = t;
 }
@@ -599,7 +852,7 @@ void ExecSb(State *state, uint32_t instr) {
         ((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
 
     Write8(state, state->x[rs1] + offset,
-           (uint8_t)(state->x[rs2] & SetNBits(8)));
+           (uint8_t)state->x[rs2]);
 }
 
 void ExecSh(State *state, uint32_t instr) {
@@ -609,7 +862,7 @@ void ExecSh(State *state, uint32_t instr) {
         ((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
 
     Write16(state, state->x[rs1] + offset,
-            (uint16_t)(state->x[rs2] & SetNBits(16)));
+            (uint16_t)state->x[rs2]);
 }
 
 void ExecSw(State *state, uint32_t instr) {
@@ -781,7 +1034,7 @@ void ExecSlliw(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t immediate = (instr >> 20) & SetNBits(5);
 
-    state->x[rd] = Sext((uint64_t)state->x[rs1] << immediate, 31);
+    state->x[rd] = Sext(((uint64_t)state->x[rs1] << (uint64_t)immediate) & SetNBits(32), 31);
 }
 
 void ExecSrliw(State *state, uint32_t instr) {
@@ -798,7 +1051,7 @@ void ExecSraiw(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t immediate = (instr >> 20) & SetNBits(5);
 
-    state->x[rd] = Sext((state->x[rs1] & SetNBits(32)) >> immediate, 31);
+    state->x[rd] = Sext((int32_t)(state->x[rs1] & SetNBits(32)) >> (uint32_t)immediate, 31);
 }
 
 void ExecOpImm32Instr(State *state, uint32_t instr) {
@@ -852,7 +1105,7 @@ void ExecSllw(State *state, uint32_t instr) {
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
     state->x[rd] =
-        Sext((uint32_t)(state->x[rs1] << state->x[rs2]) & SetNBits(32), 31);
+        Sext((state->x[rs1] << (state->x[rs2] & SetNBits(5))) & SetNBits(32), 31);
 }
 
 void ExecDivw(State *state, uint32_t instr) {
@@ -861,9 +1114,11 @@ void ExecDivw(State *state, uint32_t instr) {
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
     if (state->x[rs2] == 0) {
-        state->x[rs2] = -1;
+        state->x[rd] = -1;
+    } else if ((int32_t)(state->x[rs1] & SetNBits(32)) == -((int32_t)1 << 31) && (int32_t)(state->x[rs2] & SetNBits(32)) == -1) {
+        state->x[rd] = -((int32_t)1 << 31);
     } else {
-        state->x[rd] = Sext((state->x[rs1] / state->x[rs2]) & SetNBits(32), 31);
+        state->x[rd] = Sext(((int32_t)(state->x[rs1] & SetNBits(32)) / (int32_t)(state->x[rs2] & SetNBits(32))), 31);
     }
 }
 
@@ -872,7 +1127,7 @@ void ExecSrlw(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
-    state->x[rd] = Sext((uint32_t)state->x[rs1] >> state->x[rs2], 32);
+    state->x[rd] = Sext((uint32_t)state->x[rs1] >> state->x[rs2], 31);
 }
 
 void ExecDivuw(State *state, uint32_t instr) {
@@ -895,7 +1150,7 @@ void ExecSraw(State *state, uint32_t instr) {
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
     state->x[rd] =
-        Sext((state->x[rs1] & SetNBits(32)) >> (rs2 & SetNBits(5)), 31);
+        Sext((int32_t)(state->x[rs1] & SetNBits(32)) >> (uint32_t)(state->x[rs2] & SetNBits(5)), 31);
 }
 
 void ExecRemw(State *state, uint32_t instr) {
@@ -1203,7 +1458,7 @@ void ExecCLdsp(State *state, uint32_t instr) {
                     (instr >> 12 & SetNBits(1)) << 5 |
                     (instr >> 5 & SetNBits(2)) << 3;
 
-    state->x[rd] = *(uint64_t *)(state->mem + state->x[2] + uimm);
+    state->x[rd] = Read64(state, state->x[2] + uimm);
 }
 
 void ExecCJr(State *state, uint16_t instr) {
@@ -1247,7 +1502,7 @@ void ExecCSdsp(State *state, uint32_t instr) {
     uint32_t uimm =
         (instr >> 7 & SetNBits(3)) << 6 | (instr >> 10 & SetNBits(3)) << 3;
 
-    *(int64_t *)(state->mem + state->x[2] + uimm) = state->x[rs2];
+    Write64(state, state->x[2] + uimm, state->x[rs2]);
 }
 
 void ExecCompressedInstr(State *state, uint16_t instr) {
@@ -1266,24 +1521,29 @@ void ExecCompressedInstr(State *state, uint16_t instr) {
 
         if (funct3 == 0x0 && f_5_12 != 0) {
             ExecCAddi4spn(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x1) {
             // TODO: Implement c.fld.
             state->pc += 2;
         } else if (funct3 == 0x2) {
             ExecCLw(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x3) {
             ExecCLd(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x5) {
             // TODO: Implement c.fsd.
             state->pc += 2;
         } else if (funct3 == 0x6) {
             ExecCSw(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x7) {
             ExecCSd(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else {
             Error("Invalid instruction: funct3=%d", funct3);
@@ -1302,55 +1562,72 @@ void ExecCompressedInstr(State *state, uint16_t instr) {
 
         if (funct6 == 0x23 && funct2_2 == 0x0) {
             ExecCSub(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct6 == 0x23 && funct2_2 == 0x1) {
             ExecCXor(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct6 == 0x23 && funct2_2 == 0x2) {
             ExecCOr(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct6 == 0x23 && funct2_2 == 0x3) {
             ExecCAnd(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct6 == 0x27 && funct2_2 == 0x0) {
             ExecCSubw(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct6 == 0x27 && funct2_2 == 0x1) {
             ExecCAddw(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x0 && rd == 0) {
             // C.NOP
             state->pc += 2;
         } else if (funct3 == 0x0 && rd != 0x0) {
             ExecCAddi(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x1 && rd != 0x0) {
             ExecCAddiw(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x2) {
             ExecCLi(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x3 && rd == 2) {
             ExecCAddi16sp(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x3) {
             ExecCLui(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x4 && funct2_1 == 0x0) {
             ExecCSrli(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x4 && funct2_1 == 0x1) {
             ExecCSrai(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x4 && funct2_1 == 0x2) {
             ExecCAndi(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x5) {
             ExecCJ(state, instr);
+            if (state->excepted) return;
         } else if (funct3 == 0x6) {
             ExecCBeqz(state, instr);
+            if (state->excepted) return;
         } else if (funct3 == 0x7) {
             ExecCBnez(state, instr);
+            if (state->excepted) return;
         } else {
             Error("Invalid instruction");
         }
@@ -1365,36 +1642,45 @@ void ExecCompressedInstr(State *state, uint16_t instr) {
             // TODO: Understand c.slli64.
         } else if (funct3 == 0x0) {
             ExecCSlli(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x1) {
             // TODO: Implement c.fldsp.
         } else if (funct3 == 0x2 && f_7_11 != 0) {
             ExecCLwsp(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x3) {
             ExecCLdsp(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x4 && f_12 == 0 && f_7_11 != 0 && f_2_6 == 0) {
             ExecCJr(state, instr);
+            if (state->excepted) return;
         } else if (funct3 == 0x4 && f_12 == 0 && f_7_11 != 0 && f_2_6 != 0) {
             ExecCMv(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x4 && f_12 == 1 && f_7_11 == 0 && f_2_6 == 0) {
             // ExecCEbreak(state, instr);
             state->pc += 2;
         } else if (funct3 == 0x4 && f_12 == 1 && f_7_11 != 0 && f_2_6 == 0) {
             ExecCJalr(state, instr);
+            if (state->excepted) return;
         } else if (funct3 == 0x4 && f_12 == 1 && f_7_11 != 0 && f_2_6 != 0) {
             ExecCAdd(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x5) {
             // TODO: Implement c.fsdsp.
             state->pc += 2;
         } else if (funct3 == 0x6) {
             ExecCSwsp(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else if (funct3 == 0x7) {
             ExecCSdsp(state, instr);
+            if (state->excepted) return;
             state->pc += 2;
         } else {
             Error("Invalid instruction");
@@ -1452,6 +1738,10 @@ void ExecSret(State *state, uint32_t instr) {
 }
 
 void ExecUret(State *state, uint32_t instr) { Error("Unimplemented."); }
+
+void ExecSfencevma(State *state, uint32_t instr) {
+    // Do nothing currently.
+}
 
 void ExecCsrrw(State *state, uint32_t instr) {
     uint8_t rd = instr >> 7 & SetNBits(5);
@@ -1537,7 +1827,9 @@ void ExecSystemInstr(State *state, uint32_t instr) {
             } else if (funct7 == 0x00 && funct5 == 0x2) {
                 ExecUret(state, instr);
                 is_pc_written = true;
-            }
+            } else if (funct7 == 0x09) {
+                ExecSfencevma(state, instr);
+            } 
         }
     } break;
     case 0x1:
@@ -1568,10 +1860,14 @@ void ExecSystemInstr(State *state, uint32_t instr) {
 
 void ExecFence(State *state, uint32_t instr) {}
 
+void ExecFencei(State *state, uint32_t instr) {}
+
 void ExecMiscMem(State *state, uint32_t instr) {
     uint8_t funct3 = instr >> 12 & SetNBits(3);
     if (funct3 == 0x0) {
         ExecFence(state, instr);
+    } else if (funct3 == 0x1) {
+        ExecFencei(state, instr);
     } else {
         Error("Invalid instruction: MISC-MEM.");
     }
@@ -1653,7 +1949,7 @@ void ExecAmoandw(State *state, uint32_t instr) {
     uint8_t aq = instr >> 26 & SetNBits(1);
 
     int64_t t = Sext(Read32(state, state->x[rs1]), 31);
-    Write32(state, state->x[rs1], (uint32_t)(t | state->x[rs2]));
+    Write32(state, state->x[rs1], (uint32_t)(t & state->x[rs2]));
     state->x[rd] = t;
 }
 
@@ -1729,7 +2025,7 @@ void ExecAmoaddd(State *state, uint32_t instr) {
     uint8_t aq = instr >> 26 & SetNBits(1);
 
     int64_t t = Read64(state, state->x[rs1]);
-    Write64(state, state->x[rs1], (uint64_t)(t + rs2));
+    Write64(state, state->x[rs1], (uint64_t)(t + state->x[rs2]));
     state->x[rd] = t;
 }
 
@@ -1964,54 +2260,68 @@ void ExecInstruction(State *state, uint32_t instr) {
     switch (opcode) {
     case OP_IMM:
         ExecOpImmInstr(state, instr);
+        if (state->excepted) return;
         state->pc += sizeof(instr);
         break;
     case OP_AUIPC:
         ExecAuipc(state, instr);
+        if (state->excepted) return;
         state->pc += sizeof(instr);
         break;
     case OP_LUI:
         ExecLui(state, instr);
+        if (state->excepted) return;
         state->pc += sizeof(instr);
         break;
     case OP:
         ExecOpInstr(state, instr);
+        if (state->excepted) return;
         state->pc += sizeof(instr);
         break;
     case JAL:
         ExecJal(state, instr);
+        if (state->excepted) return;
         break;
     case JALR:
         ExecJalr(state, instr);
+        if (state->excepted) return;
         break;
     case LOAD:
         ExecLoadInstr(state, instr);
+        if (state->excepted) return;
         state->pc += sizeof(instr);
         break;
     case STORE:
         ExecStoreInstr(state, instr);
+        if (state->excepted) return;
         state->pc += sizeof(instr);
         break;
     case BRANCH:
         ExecBranchInstr(state, instr);
+        if (state->excepted) return;
         break;
     case OP_IMM_32:
         ExecOpImm32Instr(state, instr);
+        if (state->excepted) return;
         state->pc += sizeof(instr);
         break;
     case OP_32:
         ExecOp32Instr(state, instr);
+        if (state->excepted) return;
         state->pc += sizeof(instr);
         break;
     case SYSTEM:
         ExecSystemInstr(state, instr);
+        if (state->excepted) return;
         break;
     case MISC_MEM:
         ExecMiscMem(state, instr);
+        if (state->excepted) return;
         state->pc += sizeof(instr);
         break;
     case AMO:
         ExecAmo(state, instr);
+        if (state->excepted) return;
         state->pc += sizeof(instr);
         break;
     default:
