@@ -17,6 +17,7 @@ uint64_t LoadElf(State *state, size_t size, uint8_t *bin) {
     char *strtab = (char *)(bin + shstrtab->sh_offset);
 
     uint64_t text_addr;
+    bool tohost;
     for (uint64_t i = 0; i < sh_size * ehdr->e_shnum; i += sh_size) {
         Elf64_Shdr *shdr = (Elf64_Shdr *)(bin + ehdr->e_shoff + i);
         if (shdr->sh_type == SHT_PROGBITS) {
@@ -28,8 +29,9 @@ uint64_t LoadElf(State *state, size_t size, uint8_t *bin) {
             size_t text_size = shdr->sh_size;
             char *name = (strtab + shdr->sh_name);
             printf("%s: 0x%llx\n", name, virtual_addr);
-            if (!strcmp(name, ".text"))
+            if (!strcmp(name, ".text")) {
                 text_addr = virtual_addr;
+            }
 
             LoadBinaryIntoMemory(state, text, text_size, virtual_addr - DRAM_BASE);
         }

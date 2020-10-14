@@ -159,10 +159,11 @@ uint64_t Translate(State *state, uint64_t v_addr, uint8_t access_type) {
     uint64_t pa;
 step_1:
     page_fault = false;
-    uint64_t v_addr_empty = (v_addr & (SetNBits(XLEN - VALEN) << VALEN)) >> VALEN;
-    if ((v_addr & SetOneBit(VALEN - 1)) == 1 && v_addr_empty != SetNBits(25)) {
+    uint64_t va = GetRange(v_addr, VALEN, XLEN - 1);
+    if (GetRange(v_addr, VALEN - 1, VALEN - 1) == 1 && va != SetNBits(XLEN - VALEN)) {
         page_fault = true;
-    } else if ((v_addr & SetOneBit(VALEN - 1)) == 0 && v_addr_empty != 0) {
+    }
+    if (GetRange(v_addr, VALEN - 1, VALEN - 1) == 0 && va != SetNBits(XLEN - VALEN)) {
         page_fault = true;
     }
     if (page_fault) {
@@ -371,9 +372,6 @@ int64_t Sext(int64_t i, int top_bit) {
 
     return i;
 }
-
-// TODO: Pass argument of instruction's fields instead of passing `uint32_t
-// instr`.
 
 void ExecAddi(State *state, uint32_t instr) {
     uint8_t rd = instr >> 7 & SetNBits(5);
@@ -1234,11 +1232,11 @@ void ExecCAddi4spn(State *state, uint16_t instr) {
 void ExecCLw(State *state, uint16_t instr) {
     uint8_t uimm = ((instr >> 10 & SetNBits(3)) << 3) |
                    ((instr >> 5 & SetNBits(1)) << 6) |
-                   ((instr >> 6 & SetNBits(1)) << 1);
+                   ((instr >> 6 & SetNBits(1)) << 2);
     uint8_t rs1 = (instr >> 7) & SetNBits(3);
     uint8_t rd = (instr >> 2) & SetNBits(3);
 
-    state->x[8 + rd] = Sext(Read32(state, state->x[8 + rs1] + uimm), 31);
+    state->x[8 + rd] = Sext(Read32(state, state->x[8 + rs1] + uimm) & SetNBits(32), 31);
 }
 
 void ExecCLd(State *state, uint32_t instr) {
@@ -1247,13 +1245,13 @@ void ExecCLd(State *state, uint32_t instr) {
     uint8_t rs1 = instr >> 7 & SetNBits(3);
     uint8_t rd = instr >> 2 & SetNBits(3);
 
-    state->x[8 + rd] = Sext(Read64(state, state->x[8 + rs1] + uimm), 31);
+    state->x[8 + rd] = Read64(state, state->x[8 + rs1] + uimm);
 }
 
 void ExecCSw(State *state, uint16_t instr) {
     uint8_t uimm = ((instr >> 10 & SetNBits(3)) << 3) |
                    ((instr >> 5 & SetNBits(1)) << 6) |
-                   ((instr >> 6 & SetNBits(1)) << 1);
+                   ((instr >> 6 & SetNBits(1)) << 2);
     uint8_t rs1 = (instr >> 7) & SetNBits(3);
     uint8_t rs2 = (instr >> 2) & SetNBits(3);
 
@@ -1262,8 +1260,7 @@ void ExecCSw(State *state, uint16_t instr) {
 
 void ExecCSd(State *state, uint32_t instr) {
     uint8_t uimm = ((instr >> 10 & SetNBits(3)) << 3) |
-                   ((instr >> 5 & SetNBits(1)) << 6) |
-                   ((instr >> 6 & SetNBits(1)) << 1);
+                   ((instr >> 5 & SetNBits(2)) << 6);
     uint8_t rs1 = (instr >> 7) & SetNBits(3);
     uint8_t rs2 = (instr >> 2) & SetNBits(3);
 
@@ -1449,7 +1446,7 @@ void ExecCLwsp(State *state, uint16_t instr) {
                     ((instr >> 12 & SetNBits(1)) << 5) |
                     ((instr >> 4 & SetNBits(3)) << 2);
 
-    state->x[rd] = *(int32_t *)(state->mem + state->x[2] + uimm);
+    state->x[rd] = Sext(Read32(state, state->x[2] + uimm) & SetNBits(32), 31);
 }
 
 void ExecCLdsp(State *state, uint32_t instr) {
@@ -1494,7 +1491,7 @@ void ExecCSwsp(State *state, uint16_t instr) {
     uint32_t uimm =
         ((instr >> 9 & SetNBits(4)) << 2) | ((instr >> 7 & SetNBits(2)) << 6);
 
-    *(int32_t *)(state->mem + state->x[2] + uimm) = state->x[rs2];
+    Write32(state, state->x[2] + uimm, state->x[rs2]);
 }
 
 void ExecCSdsp(State *state, uint32_t instr) {
@@ -1714,8 +1711,7 @@ void ExecEbreak(State *state, uint32_t instr) {
 }
 
 void ExecWfi(State *state, uint32_t instr) {
-    printf("wfi\n");
-    state->pc = UINT64_MAX;
+    while (true);
 }
 
 void ExecMret(State *state, uint32_t instr) {

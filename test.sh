@@ -47,6 +47,7 @@ run_test_isa() {
 run_test_isa "`find ./test/riscv-tests -not -name "*.dump" | grep rv64ui-p-`"
 run_test_isa "`find ./test/riscv-tests -not -name "*.dump" | grep rv64um-p-`"
 run_test_isa "`find ./test/riscv-tests -not -name "*.dump" | grep rv64ua-p-`"
+run_test_isa "`find ./test/riscv-tests -not -name "*.dump" | grep rv64uc-p-`"
 
 cd test
 make clean &> /dev/null

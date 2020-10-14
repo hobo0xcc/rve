@@ -56,7 +56,7 @@ size_t ReadBinaryFile(const char *name, uint8_t **buf) {
 void TakeTrap(State *state) {
     uint8_t prev_mode = state->mode;
     uint8_t cause = state->exception_code;
-    printf("Trap\n");
+    // printf("Trap cause: %d\n", cause);
     if (state->mode <= SUPERVISOR && state->csr[MEDELEG] >> cause & 1) {
         state->mode = SUPERVISOR;
         state->csr[SEPC] = state->pc;
@@ -93,7 +93,7 @@ void CPUMain(State *state, uint64_t start_addr, size_t code_size,
         }
         uint32_t instr = Fetch32(state, state->pc);
         if (!state->excepted) {
-            printf("pc: %llx\n", state->pc);
+            // printf("pc: %llx\n", state->pc);
             ExecInstruction(state, instr);
         }
         state->x[0] = 0;
