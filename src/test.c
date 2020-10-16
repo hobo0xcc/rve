@@ -16,5 +16,8 @@ void RunTest() {
     WriteCSR(state, MSTATUS, 0, 63, 20);
     assert(ReadCSR(state, MSTATUS, 0, 4) == 20);
 
+    Write8(state, CLINT_BASE, 0x0e);
+    assert(Read8(state, CLINT_BASE) == 0x0e);
+
     assert(GetRange(10, 2, 3) == 2);
 }

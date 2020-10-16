@@ -2,14 +2,17 @@
 #include <stdint.h>
 #include <stdio.h>
 
+// Set N-bit(s).
 int64_t SetNBits(int32_t n) {
     if (n == 64)
         return ~((uint64_t)0);
     return ((uint64_t)1 << n) - 1;
 }
 
-int64_t SetOneBit(int i) { return (1 << i); }
+// Set i-th bit.
+int64_t SetOneBit(int i) { return ((uint64_t)1 << i); }
 
+// v[start:end].
 uint64_t GetRange(uint64_t v, uint64_t start, uint64_t end) {
     if (start < 0 || end >= 64) {
         Error("Out of range: GetRange");
@@ -19,78 +22,278 @@ uint64_t GetRange(uint64_t v, uint64_t start, uint64_t end) {
     return (v & (mask << start)) >> start;
 }
 
+void ClintTick(State *state) {
+    state->clint->mtime++;
+    if ((state->clint->msip & 1) != 0) {
+        WriteCSR(state, MIP, 3, 3, 1);
+    }
+    if (state->clint->mtimecmp > 0 && state->clint->mtime >= state->clint->mtimecmp) {
+        WriteCSR(state, MIP, 7, 7, 1);
+    }
+}
+
+void HandleTrap(State *state, uint64_t instr_addr) {
+    uint8_t prev_mode = state->mode;
+    uint64_t cause = state->exception_code;
+    printf("Trap pc: %llx, cause: %lld\n", state->pc, cause);
+    uint64_t mdeleg = MEDELEG;
+    if (cause & SetOneBit(63)) {
+        mdeleg = MIDELEG;
+    }
+    // printf("Trap cause: %d\n", cause);
+    if (state->mode <= SUPERVISOR && state->csr[mdeleg] >> cause & 1) {
+        state->mode = SUPERVISOR;
+        state->csr[SEPC] = state->pc;
+        uint64_t vector = 0;
+        if (ReadCSR(state, STVEC, 0, 0) == 1) {
+            vector = 4 * (cause & SetNBits(63));
+        }
+        state->pc = (state->csr[STVEC] & ~1) + vector;
+        state->csr[SCAUSE] = state->exception_code;
+        state->csr[STVAL] = 0;
+        WriteCSR(state, SSTATUS, 5, 5, ReadCSR(state, SSTATUS, 1, 1));
+        WriteCSR(state, SSTATUS, 1, 1, 0);
+        if (prev_mode == USER) {
+            WriteCSR(state, SSTATUS, 8, 8, 0);
+        } else {
+            WriteCSR(state, SSTATUS, 8, 8, 1);
+        }
+    } else {
+        state->mode = MACHINE;
+        state->csr[MEPC] = state->pc;
+        uint64_t vector = 0;
+        if (ReadCSR(state, MTVEC, 0, 0) == 1) {
+            vector = 4 * (cause & SetNBits(63));
+        }
+        state->pc = (state->csr[MTVEC] & ~1) + vector;
+        state->csr[MCAUSE] = state->exception_code;
+        state->csr[MTVAL] = 0;
+        // Save current Mode into CSRs[mstatus].MPP.
+        WriteCSR(state, MSTATUS, 11, 12, prev_mode);
+    }
+}
+
+void HandleInterrupt(State *state, uint64_t instr_addr) {
+    uint16_t mint = ReadCSR(state, MIP, 0, 15) & ReadCSR(state, MIE, 0, 15);
+    bool interrupted = true;
+    if (mint & SetOneBit(11)) {
+        state->exception_code = SetOneBit(63) | 11;
+    } else if (mint & SetOneBit(9)) {
+        state->exception_code = SetOneBit(63) | 9;
+    } else if (mint & SetOneBit(7)) {
+        state->exception_code = SetOneBit(63) | 7;
+    } else if (mint & SetOneBit(5)) {
+        state->exception_code = SetOneBit(63) | 5;
+    } else if (mint & SetOneBit(3)) {
+        state->exception_code = SetOneBit(63) | 3;
+    } else if (mint & SetOneBit(1)) {
+        state->exception_code = SetOneBit(63) | 1;
+    } else {
+        // There's no pending interrupt or the interrupt doesn't implemented yet.
+        interrupted = false;
+    }
+
+    if (interrupted) {
+        state->excepted = true;
+        HandleTrap(state, instr_addr);
+    }
+}
+
+void Tick(State *state) {
+    state->clock++;
+    uint32_t instr = Fetch32(state, state->pc);
+    
+    if (!state->excepted) {
+        ExecInstruction(state, instr);
+    }
+    ClintTick(state);
+    state->x[0] = 0;
+
+    if (state->excepted) {
+        HandleTrap(state, state->pc);
+        state->excepted = false;
+        state->exception_code = 0;
+    }
+}
+
 void UartWrite(State *state, uint64_t offset, uint8_t ch) {
     if (offset == 0) {
-        state->uart_mem[offset] = ch;
-        if (state->uart_mem[3] & SetOneBit(7)) {
+        state->uart->uart_mem[offset] = ch;
+        if (state->uart->uart_mem[3] & SetOneBit(7)) {
             return;
         }
-        // printf("%d: ", ch);
         putc(ch, stdout);
-        // putc('\n', stdout);
         fflush(stdout);
     } else {
-        state->uart_mem[offset] = ch;
+        state->uart->uart_mem[offset] = ch;
     }
 }
 
 uint8_t UartRead(State *state, uint64_t offset) {
     if (offset == 0) {
-        if (state->uart_mem[3] & SetOneBit(7)) {
-            return state->uart_mem[offset];
+        if (state->uart->uart_mem[3] & SetOneBit(7)) {
+            return state->uart->uart_mem[offset];
         }
         uint8_t ch = getc(stdin);
-        state->uart_mem[offset] = ch;
+        state->uart->uart_mem[offset] = ch;
         return ch;
     } else {
-        return state->uart_mem[offset];
+        return state->uart->uart_mem[offset];
+    }
+}
+
+void WriteRange8(uint64_t *dest, uint8_t val, uint64_t start) {
+    uint8_t mask = *dest & (SetNBits(8) << (start * 8));
+    *dest ^= mask;
+    *dest |= val << (start * 8);
+}
+
+uint8_t ReadRange8(uint64_t src, uint64_t start) {
+    return (src & (SetNBits(8) << (start * 8))) >> (start * 8);
+}
+
+void ClintWrite(State *state, uint64_t offset, uint8_t val) {
+    if (offset >= CLINT_MSIP_BASE && offset < CLINT_MSIP_BASE + CLINT_MSIP_SIZE) {
+        WriteRange8((uint64_t *)&state->clint->msip, val, offset - CLINT_MSIP_BASE);
+    } else if (offset >= CLINT_MTIMECMP_BASE && offset < CLINT_MTIMECMP_BASE + CLINT_MTIMECMP_SIZE) {
+        WriteRange8(&state->clint->mtimecmp, val, offset - CLINT_MTIMECMP_BASE);
+    } else if (offset >= CLINT_MTIME_BASE && offset < CLINT_MTIME_BASE + CLINT_MTIME_SIZE) {
+        WriteRange8(&state->clint->mtime, val, offset - CLINT_MTIME_BASE);
+    } else {
+        // Do nothing.
+    }
+}
+
+uint8_t ClintRead(State *state, uint64_t offset) {
+    if (offset >= CLINT_MSIP_BASE && offset < CLINT_MSIP_BASE + CLINT_MSIP_SIZE) {
+        return ReadRange8(state->clint->msip, offset - CLINT_MSIP_BASE);
+    } else if (offset >= CLINT_MTIMECMP_BASE && offset < CLINT_MTIMECMP_BASE + CLINT_MTIMECMP_SIZE) {
+        return ReadRange8(state->clint->mtimecmp, offset - CLINT_MTIMECMP_BASE);
+    } else if (offset >= CLINT_MTIME_BASE && offset < CLINT_MTIME_BASE + CLINT_MTIME_SIZE) {
+        return ReadRange8(state->clint->mtime, offset - CLINT_MTIME_BASE);
+    } else {
+        return 0;
     }
 }
 
 void MemWrite8(State *state, uint64_t addr, uint8_t val) {
-    if (addr >= UART_BASE && addr <= UART_BASE + UART_SIZE) {
+    if (addr >= UART_BASE && addr < (UART_BASE + UART_SIZE)) {
         UartWrite(state, addr - UART_BASE, val);
-    } else {
+        return;
+    } else if (addr >= CLINT_BASE && addr < (CLINT_BASE + CLINT_SIZE)) {
+        ClintWrite(state, addr - CLINT_BASE, val);
+        return;
+    } else if (addr >= PLIC_BASE && addr < (PLIC_BASE + PLIC_SIZE)) {
+        return;
+    } else if (addr >= VIRTIO_BASE && addr < (VIRTIO_BASE + VIRTIO_SIZE)) {
+        return;
+    } else if (addr >= DRAM_BASE) {
         *(uint8_t *)(state->mem + (addr - DRAM_BASE)) = val;
+        return;
     }
+    state->excepted = true;
+    state->exception_code = InstructionAccessFault;
+    return;
 }
 
 void MemWrite16(State *state, uint64_t addr, uint16_t val) {
-    *(uint16_t *)(state->mem + (addr - DRAM_BASE)) = val;
+    // if (addr >= CLINT_BASE && addr < (CLINT_BASE + CLINT_SIZE)) {
+    //     return;
+    // } else if (addr >= DRAM_BASE) {
+    //     *(uint16_t *)(state->mem + (addr - DRAM_BASE)) = val;
+    //     return;
+    // }
+    for (int i = 0; i < 2; i++) {
+        MemWrite8(state, addr + i, (uint8_t)(val >> (i * 8) & SetNBits(8)));
+    }
 }
 
 void MemWrite32(State *state, uint64_t addr, uint32_t val) {
-    *(uint32_t *)(state->mem + (addr - DRAM_BASE)) = val;
+    // if (addr >= CLINT_BASE && addr < (CLINT_BASE + CLINT_SIZE)) {
+    //     return;
+    // } else if (addr >= PLIC_BASE && addr < (PLIC_BASE + PLIC_SIZE)) {
+    //     return;
+    // } else if (addr >= DRAM_BASE) {
+    //     *(uint32_t *)(state->mem + (addr - DRAM_BASE)) = val;
+    //     return;
+    // }
+    for (int i = 0; i < 4; i++) {
+        MemWrite8(state, addr + i, (uint8_t)(val >> (i * 8) & SetNBits(8)));
+    }
 }
 
 void MemWrite64(State *state, uint64_t addr, uint64_t val) {
-    *(uint64_t *)(state->mem + (addr - DRAM_BASE)) = val;
+    // if (addr >= CLINT_BASE && addr < (CLINT_BASE + CLINT_SIZE)) {
+    //     return;
+    // } else if (addr >= PLIC_BASE && addr < (PLIC_BASE + PLIC_SIZE)) {
+    //     return;
+    // } else if (addr >= DRAM_BASE) {
+    //     *(uint64_t *)(state->mem + (addr - DRAM_BASE)) = val;
+    //     return;
+    // }
+    for (int i = 0; i < 8; i++) {
+        MemWrite8(state, addr + i, (uint8_t)(val >> (i * 8) & SetNBits(8)));
+    }
 }
 
 uint8_t MemRead8(State *state, uint64_t addr) {
-    if (addr >= UART_BASE && addr <= UART_BASE + UART_SIZE) {
+    if (addr >= UART_BASE && addr < (UART_BASE + UART_SIZE)) {
         return UartRead(state, addr - UART_BASE);
-    } else {
+    } else if (addr >= CLINT_BASE && addr < (CLINT_BASE + CLINT_SIZE)) {
+        return ClintRead(state, addr - CLINT_BASE);
+    } else if (addr >= PLIC_BASE && addr < (PLIC_BASE + PLIC_SIZE)) {
+        return 0;
+    } else if (addr >= VIRTIO_BASE && addr < (VIRTIO_BASE + VIRTIO_SIZE)) {
+        return 0;
+    } else if (addr >= DRAM_BASE) {
         return *(uint8_t *)(state->mem + (addr - DRAM_BASE));
     }
-}
-
-uint16_t MemRead16(State *state, uint64_t addr) {
-    return *(uint16_t *)(state->mem + (addr - DRAM_BASE));
-}
-
-uint32_t MemRead32(State *state, uint64_t addr) {
-    return *(uint32_t *)(state->mem + (addr - DRAM_BASE));
-}
-
-uint64_t MemRead64(State *state, uint64_t addr) {
-    if (addr >= DRAM_BASE) {
-        return *(uint64_t *)(state->mem + (addr - DRAM_BASE));
-    }
-
     state->excepted = true;
     state->exception_code = InstructionAccessFault;
     return 0;
+}
+
+uint16_t MemRead16(State *state, uint64_t addr) {
+    // if (addr >= CLINT_BASE && addr < (CLINT_BASE + CLINT_SIZE)) {
+    //     return 0;
+    // } else if (addr >= DRAM_BASE) {
+    //     return *(uint16_t *)(state->mem + (addr - DRAM_BASE));
+    // }
+    uint16_t val = 0;
+    for (int i = 0; i < 2; i++) {
+        val |= (uint16_t)(MemRead8(state, addr + i)) << (i * 8);
+    }
+    return val;
+}
+
+uint32_t MemRead32(State *state, uint64_t addr) {
+    // if (addr >= PLIC_BASE && addr < (PLIC_BASE + PLIC_SIZE)) {
+    //     return 0;
+    // } else if (addr >= CLINT_BASE && addr < (CLINT_BASE + CLINT_SIZE)) {
+    //     return 0;
+    // } else if (addr >= DRAM_BASE) {
+    //     return *(uint32_t *)(state->mem + (addr - DRAM_BASE));
+    // }
+    uint32_t val = 0;
+    for (int i = 0; i < 4; i++) {
+        val |= (uint32_t)(MemRead8(state, addr + i)) << (i * 8);
+    }
+    return val;
+}
+
+uint64_t MemRead64(State *state, uint64_t addr) {
+    // if (addr >= PLIC_BASE && addr < (PLIC_BASE + PLIC_SIZE)) {
+    //     return 0;
+    // } else if (addr >= CLINT_BASE && addr < (CLINT_BASE + CLINT_SIZE)) {
+    //     return 0;
+    // } else if (addr >= DRAM_BASE) {
+    //     return *(uint64_t *)(state->mem + (addr - DRAM_BASE));
+    // }
+    uint64_t val = 0;
+    for (int i = 0; i < 8; i++) {
+        val |= (uint64_t)(MemRead8(state, addr + i)) << (i * 8);
+    }
+    return val;
 }
 
 void AccessFault(State *state, uint8_t access_type) {
@@ -129,6 +332,7 @@ void PageFault(State *state, uint8_t access_type) {
     }
 }
 
+// Translate a virtual address to a physical address.
 uint64_t Translate(State *state, uint64_t v_addr, uint8_t access_type) {
     uint8_t MODE = ReadCSR(state, SATP, 60, 63);
 
@@ -145,6 +349,7 @@ uint64_t Translate(State *state, uint64_t v_addr, uint8_t access_type) {
     bool page_fault;
     uint64_t PPN;
     uint64_t va_vpn_i;
+    uint64_t pte_addr;
     uint64_t pte;
     uint8_t pte_v;
     uint8_t pte_r;
@@ -158,12 +363,13 @@ uint64_t Translate(State *state, uint64_t v_addr, uint8_t access_type) {
     uint64_t pte_ppn;
     uint64_t pa;
 step_1:
+    // printf("step1\n");
     page_fault = false;
     uint64_t va = GetRange(v_addr, VALEN, XLEN - 1);
     if (GetRange(v_addr, VALEN - 1, VALEN - 1) == 1 && va != SetNBits(XLEN - VALEN)) {
         page_fault = true;
     }
-    if (GetRange(v_addr, VALEN - 1, VALEN - 1) == 0 && va != SetNBits(XLEN - VALEN)) {
+    if (GetRange(v_addr, VALEN - 1, VALEN - 1) == 0 && va != 0) {
         page_fault = true;
     }
     if (page_fault) {
@@ -172,15 +378,19 @@ step_1:
     }
 
 step2:
+    // printf("step2\n");
     PPN = ReadCSR(state, SATP, 0, 43);
     a = PPN * PAGESIZE;
     i = LEVELS - 1;
 
 step3:
+    // printf("step3\n");
     va_vpn_i = ((v_addr >> 12) >> (i * 9)) & SetNBits(9);
-    pte = MemRead64(state, a + va_vpn_i * PTESIZE);
+    pte_addr = a + va_vpn_i * PTESIZE;
+    pte = MemRead64(state, pte_addr);
 
 step4:
+    // printf("step4\n");
     pte_v = pte & SetNBits(1);
     pte_r = pte >> 1 & SetNBits(1);
     pte_w = pte >> 2 & SetNBits(1);
@@ -197,6 +407,7 @@ step4:
     }
 
 step5:
+    // printf("step5\n");
     // If pte.r=1 or pte.x=1, go to step 6. 
     if (pte_r == 1 || pte_x == 1) {
         goto step6;
@@ -212,13 +423,14 @@ step5:
     }
 
 step6:
+    // printf("step6\n");
     page_fault = false;
     // When SUM=0, S-mode memory accesses to pages that areaccessible by U-mode (U=1 in Figure 4.17) will fault. 
     if (ReadCSR(state, MSTATUS, 18, 18) == 0 && pte_u == 1) {
         page_fault = true;
     }
     if (access_type == AccessInstruction) {
-        if (pte_x == 0 || pte_r == 0) {
+        if (pte_x == 0) {
             page_fault = true;
         }
     }
@@ -227,15 +439,14 @@ step6:
             if (pte_r == 0) {
                 page_fault = true;
             }
-        }
-        if (ReadCSR(state, MSTATUS, 19, 19) == 1) {
+        } else if (ReadCSR(state, MSTATUS, 19, 19) == 1) {
             if (pte_r == 0 || pte_x == 0) {
                 page_fault = true;
             }
         }
     }
     if (access_type == AccessStore) {
-        if (pte_r == 0 || pte_x == 0) {
+        if (pte_w == 0) {
             page_fault = true;
         }
     }
@@ -246,6 +457,7 @@ step6:
     }
 
 step7:
+    // printf("step7\n");
     if (i > 0) {
         if ((pte_ppn & SetNBits(9 * i)) != 0) {
             page_fault = true;
@@ -257,19 +469,21 @@ step7:
     }
 
 step8:
+    // printf("step8\n");
     if (pte_a == 0 || (access_type == AccessStore && pte_d == 0)) {
-        PageFault(state, access_type);
-        return v_addr;
+        uint64_t new_pte = pte | SetOneBit(6) | (access_type == AccessStore ? SetOneBit(7) : 0);
+        MemWrite64(state, pte_addr, new_pte);
     }
 
 step9:
+    // printf("step9\n");
     pa = 0;
     pa |= (v_addr & SetNBits(12));
     if (i > 0) {
         pa |= (v_addr >> 12 & SetNBits(9 * i)) << 12;
     }
     pa |= (pte_ppn & (SetNBits(44) ^ SetNBits(9 * i))) << 12;
-    printf("va: 0x%llx -> pa: 0x%llx\n", v_addr, pa);
+    // printf("va: 0x%llx -> pa: 0x%llx\n", v_addr, pa);
     return pa;
 }
 
@@ -327,6 +541,7 @@ uint32_t Fetch32(State *state, uint64_t v_addr) {
     return MemRead32(state, p_addr);
 }
 
+// CSRs[csr][start_bit:end_bit] = val
 void WriteCSR(State *state, uint16_t csr, uint8_t start_bit, uint8_t end_bit,
               uint64_t val) {
     assert(start_bit <= end_bit);
@@ -337,6 +552,7 @@ void WriteCSR(State *state, uint16_t csr, uint8_t start_bit, uint8_t end_bit,
     state->csr[csr] |= (val << start_bit);
 }
 
+// CSRs[csr][start_bit:end_bit]
 uint64_t ReadCSR(State *state, uint16_t csr, uint8_t start_bit,
                  uint8_t end_bit) {
     assert(start_bit <= end_bit);
@@ -345,6 +561,8 @@ uint64_t ReadCSR(State *state, uint16_t csr, uint8_t start_bit,
     return (state->csr[csr] & (mask << start_bit)) >> start_bit;
 }
 
+// Check whether current privilege mode is `mode`.
+// If the privilege mode isn't `mode`, raise `IllegalInstruction` exception.
 bool Require(State *state, uint8_t mode) {
     if (state->mode == MACHINE) {
         if (mode == MACHINE || mode == SUPERVISOR || mode == USER) {
@@ -365,6 +583,7 @@ bool Require(State *state, uint8_t mode) {
     return false;
 }
 
+// Sign-extend a value of `i` by supposing that its top bit is `top_bit`.
 int64_t Sext(int64_t i, int top_bit) {
     if (i & SetOneBit(top_bit)) {
         i |= SetNBits(64 - top_bit - 1) << (top_bit + 1);
@@ -1687,7 +1906,6 @@ void ExecCompressedInstr(State *state, uint16_t instr) {
 }
 
 void ExecEcall(State *state, uint32_t instr) {
-    // TODO: Implement exception.
     printf("Exception\n");
     state->excepted = true;
     int exception_code;
@@ -1708,6 +1926,10 @@ void ExecEcall(State *state, uint32_t instr) {
 void ExecEbreak(State *state, uint32_t instr) {
     // TODO: Implement break point exception.
     printf("Break\n");
+}
+
+void ExecSfencevma(State *state, uint32_t instr) {
+    // Do nothing currently.
 }
 
 void ExecWfi(State *state, uint32_t instr) {
@@ -1733,11 +1955,7 @@ void ExecSret(State *state, uint32_t instr) {
     WriteCSR(state, SSTATUS, 8, 8, 0);
 }
 
-void ExecUret(State *state, uint32_t instr) { Error("Unimplemented."); }
-
-void ExecSfencevma(State *state, uint32_t instr) {
-    // Do nothing currently.
-}
+void ExecUret(State *state, uint32_t instr) { }
 
 void ExecCsrrw(State *state, uint32_t instr) {
     uint8_t rd = instr >> 7 & SetNBits(5);
@@ -1812,7 +2030,9 @@ void ExecSystemInstr(State *state, uint32_t instr) {
         } else {
             uint8_t funct5 = instr >> 20 & SetNBits(5);
             uint8_t funct7 = instr >> 25 & SetNBits(7);
-            if (funct7 == 0x08 && funct5 == 0x5) {
+            if (funct7 == 0x09) {
+                ExecSfencevma(state, instr);
+            } else if (funct7 == 0x08 && funct5 == 0x5) {
                 ExecWfi(state, instr);
             } else if (funct7 == 0x18 && funct5 == 0x2) {
                 ExecMret(state, instr);
@@ -1823,9 +2043,9 @@ void ExecSystemInstr(State *state, uint32_t instr) {
             } else if (funct7 == 0x00 && funct5 == 0x2) {
                 ExecUret(state, instr);
                 is_pc_written = true;
-            } else if (funct7 == 0x09) {
-                ExecSfencevma(state, instr);
-            } 
+            } else {
+                Error("Unknown instruction: System");
+            }
         }
     } break;
     case 0x1:

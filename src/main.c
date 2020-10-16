@@ -15,6 +15,17 @@ void Error(const char *fmt, ...) {
     exit(1);
 }
 
+Uart *NewUart() {
+    Uart *uart = calloc(1, sizeof(Uart));
+    uart->uart_mem[5] |= 0x20;
+    return uart;
+}
+
+Clint *NewClint() {
+    Clint *clint = calloc(1, sizeof(Clint));
+    return clint;
+}
+
 State *NewState(size_t mem_size) {
     State *state = calloc(1, sizeof(State));
     state->mem = calloc(1, mem_size);
@@ -27,8 +38,9 @@ void ResetState(State *state) {
     state->excepted = false;
     state->exception_code = 0;
     memset(state->csr, 0, sizeof(state->csr));
-    state->uart_mem[5] |= 0x20;
     state->mode = MACHINE;
+    state->uart = NewUart();
+    state->clint = NewClint();
 }
 
 void LoadBinaryIntoMemory(State *state, uint8_t *bin, size_t bin_size,
@@ -53,55 +65,20 @@ size_t ReadBinaryFile(const char *name, uint8_t **buf) {
     return size;
 }
 
-void TakeTrap(State *state) {
-    uint8_t prev_mode = state->mode;
-    uint8_t cause = state->exception_code;
-    // printf("Trap cause: %d\n", cause);
-    if (state->mode <= SUPERVISOR && state->csr[MEDELEG] >> cause & 1) {
-        state->mode = SUPERVISOR;
-        state->csr[SEPC] = state->pc;
-        state->pc = state->csr[STVEC] & ~1;
-        state->csr[MCAUSE] = state->exception_code;
-        state->csr[STVAL] = 0;
-        WriteCSR(state, SSTATUS, 5, 5, ReadCSR(state, SSTATUS, 1, 1));
-        WriteCSR(state, SSTATUS, 1, 1, 0);
-        if (prev_mode == USER) {
-            WriteCSR(state, SSTATUS, 8, 8, 0);
-        } else {
-            WriteCSR(state, SSTATUS, 8, 8, 1);
-        }
-    } else {
-        state->mode = MACHINE;
-        state->csr[MEPC] = state->pc;
-        state->pc = state->csr[MTVEC] & ~1;
-        state->csr[MCAUSE] = state->exception_code;
-        state->csr[MTVAL] = 0;
-        // Save current Mode into CSRs[mstatus].MPP.
-        WriteCSR(state, MSTATUS, 11, 12, prev_mode);
-    }
-}
-
 void CPUMain(State *state, uint64_t start_addr, size_t code_size,
              bool is_debug) {
     uint64_t count = 0;
-    for (state->pc = start_addr; ;) {
+    state->pc = start_addr;
+    for (;;) {
         count++;
         if (is_debug && count >= 10000)
             return;
         if (state->pc == 0) {
             break;
         }
-        uint32_t instr = Fetch32(state, state->pc);
-        if (!state->excepted) {
-            // printf("pc: %llx\n", state->pc);
-            ExecInstruction(state, instr);
-        }
-        state->x[0] = 0;
-        if (state->excepted) {
-            TakeTrap(state);
-            state->excepted = false;
-            state->exception_code = 0;
-        }
+
+        // printf("pc: %llx\n", state->pc);
+        Tick(state);
     }
 }
 

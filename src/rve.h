@@ -13,6 +13,21 @@
 #define UART_BASE 0x10000000
 #define UART_SIZE 0x100
 
+#define PLIC_BASE 0xc000000
+#define PLIC_SIZE 0x4000000
+
+#define CLINT_BASE 0x2000000
+#define CLINT_SIZE 0x10000
+#define CLINT_MSIP_BASE 0x00
+#define CLINT_MSIP_SIZE 0x04
+#define CLINT_MTIMECMP_BASE 0x4000
+#define CLINT_MTIMECMP_SIZE 0x08
+#define CLINT_MTIME_BASE 0xBFF8
+#define CLINT_MTIME_SIZE 0x08
+
+#define VIRTIO_BASE 0x10001000
+#define VIRTIO_SIZE 0x1000
+
 #define VALEN 39
 #define PAGESIZE 4096
 #define LEVELS 3
@@ -63,10 +78,12 @@ enum CSR {
     MSTATUS = 0x300,
     MEDELEG = 0x302,
     MIDELEG = 0x303,
+    MIE = 0x304,
     MTVEC = 0x305,
     MEPC = 0x341,
     MCAUSE = 0x342,
     MTVAL = 0x343,
+    MIP = 0x344,
 };
 
 enum PrivilegeLevel {
@@ -89,14 +106,28 @@ enum RV64Sv {
     Sv64 = 11,
 };
 
+typedef struct Uart {
+    uint8_t uart_mem[UART_SIZE];
+} Uart;
+
+typedef struct Clint {
+    uint32_t msip;
+    uint64_t mtimecmp;
+    uint64_t mtime;
+} Clint;
+
 typedef struct State {
     uint64_t pc;
     uint64_t csr[4096];
     int64_t x[32];
     uint8_t *mem;
-    uint8_t uart_mem[0x100];
+    uint64_t clock;
+
+    Uart *uart;
+    Clint *clint;
+
     bool excepted;
-    int exception_code;
+    uint64_t exception_code;
     uint8_t mode;
 } State;
 
@@ -129,6 +160,8 @@ uint16_t Read16(State *state, uint64_t v_addr);
 uint32_t Read32(State *state, uint64_t v_addr);
 uint64_t Read64(State *state, uint64_t v_addr);
 uint32_t Fetch32(State *state, uint64_t v_addr);
+
+void Tick(State *state);
 
 void LoadBinaryIntoMemory(State *state, uint8_t *bin, size_t bin_size,
                           uint64_t load_addr);
