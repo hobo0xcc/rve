@@ -17,7 +17,6 @@ rve [--debug] file
 
 rve run the ELF-Executable `file` and then prints registers and program-counter.
 The `--debug` option is used to run the tests of riscv-tests.
-If the `--debug` option is given, rve will return the value of gp(x3) register.
 
 # Test
 
