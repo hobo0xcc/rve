@@ -26,6 +26,18 @@ Clint *NewClint() {
     return clint;
 }
 
+Plic *NewPlic() {
+    Plic *plic = calloc(1, sizeof(Plic));
+    return plic;
+}
+
+Virtio *NewVirtio() {
+    Virtio *virtio = calloc(1, sizeof(Virtio));
+    virtio->queue_align = 0x1000;
+    virtio->queue_notify = 0x1234;
+    return virtio;
+}
+
 State *NewState(size_t mem_size) {
     State *state = calloc(1, sizeof(State));
     state->mem = calloc(1, mem_size);
@@ -41,6 +53,9 @@ void ResetState(State *state) {
     state->mode = MACHINE;
     state->uart = NewUart();
     state->clint = NewClint();
+    state->plic = NewPlic();
+    state->virtio = NewVirtio();
+    WriteCSR(state, SSTATUS, 32, 33, 2);
 }
 
 void LoadBinaryIntoMemory(State *state, uint8_t *bin, size_t bin_size,
@@ -70,15 +85,16 @@ void CPUMain(State *state, uint64_t start_addr, size_t code_size,
     uint64_t count = 0;
     state->pc = start_addr;
     for (;;) {
+        uint64_t bpc = state->pc;
         count++;
         if (is_debug && count >= 10000)
             return;
-        if (state->pc == 0) {
-            break;
-        }
-
+        
         // printf("pc: %llx\n", state->pc);
         Tick(state);
+        if (state->pc == 0) {
+            printf("pc: %llx -> 0, sp: %llx\n", Translate(state, bpc, AccessInstruction), state->x[2]);
+        }
     }
 }
 
@@ -89,6 +105,10 @@ void PrintRegisters(State *state, bool is_debug) {
     printf("pc: %llx\n", state->pc);
 }
 
+void SetDisk(State *state, uint8_t *disk) {
+    state->virtio->disk = disk;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         Error("Missing argument, at least 1 argument required.");
@@ -97,15 +117,25 @@ int main(int argc, char **argv) {
     int prog_name_idx = 1;
     bool is_debug = false;
     if (!strcmp(argv[1], "--debug")) {
-        RunTest();
         is_debug = true;
         prog_name_idx++;
+    } else if (!strcmp(argv[1], "--test")) {
+        RunTest();
+        return 0;
     }
 
     uint8_t *bin;
-    size_t size = ReadBinaryFile(argv[prog_name_idx], &bin);
-    State *state = NewState(0x8010000/*0x7A12000*/);
+    size_t size = ReadBinaryFile(argv[prog_name_idx++], &bin);
+    State *state = NewState(0x9000000/*0x7A12000*/);
     ResetState(state);
+
+    if (argc > prog_name_idx && !strcmp(argv[prog_name_idx], "--disk")) {
+        char *name = argv[++prog_name_idx];
+        uint8_t *data;
+        ReadBinaryFile(name, &data);
+        SetDisk(state, data);
+        prog_name_idx += 2;
+    }
 
     uint64_t addr = LoadElf(state, size, bin);
 

@@ -15,6 +15,14 @@
 
 #define PLIC_BASE 0xc000000
 #define PLIC_SIZE 0x4000000
+#define PLIC_PRIORITY_BASE 0x04
+#define PLIC_PRIORITY_SIZE 0xff8
+#define PLIC_ENABLE_BASE 0x2080
+#define PLIC_ENABLE_SIZE 0x08
+#define PLIC_THRESHOLD_BASE 0x201000
+#define PLIC_THRESHOLD_SIZE 0x04
+#define PLIC_IRQ_BASE 0x201004
+#define PLIC_IRQ_SIZE 0x04
 
 #define CLINT_BASE 0x2000000
 #define CLINT_SIZE 0x10000
@@ -27,6 +35,29 @@
 
 #define VIRTIO_BASE 0x10001000
 #define VIRTIO_SIZE 0x1000
+#define VIRTIO_MAGIC_VALUE_BASE 0x00
+#define VIRTIO_DEVICE_VERSION_BASE 0x04
+#define VIRTIO_DEVICE_ID_BASE 0x08
+#define VIRTIO_VENDOR_ID_BASE 0x0c
+#define VIRTIO_HOST_FEATURES_BASE 0x10
+#define VIRTIO_GUEST_FEATURES_BASE 0x20
+#define VIRTIO_GUEST_PAGE_SIZE_BASE 0x28
+#define VIRTIO_QUEUE_NUM_MAX_BASE 0x34
+#define VIRTIO_QUEUE_NUM_BASE 0x38
+#define VIRTIO_QUEUE_ALIGN_BASE 0x3c
+#define VIRTIO_QUEUE_PFN_BASE 0x40
+#define VIRTIO_QUEUE_NOTIFY_BASE 0x50
+#define VIRTIO_INTERRUPT_STATUS_BASE 0x60
+#define VIRTIO_INTERRUPT_ACK_BASE 0x64
+#define VIRTIO_STATUS_BASE 0x70
+
+#define VIRTIO_NOTIFY 0x1234
+
+#define DESC_NUM 8
+#define VRING_DESC_SIZE 16
+
+#define VIRTIO_IRQ 1
+#define UART_IRQ 10
 
 #define VALEN 39
 #define PAGESIZE 4096
@@ -68,11 +99,21 @@ enum Exception {
 };
 
 enum CSR {
+    USTATUS = 0x000,
+    UIE = 0x004,
+    UTVEC = 0x005,
+    UEPC = 0x041,
+    UCAUSE = 0x042,
+    UTVAL = 0x043,
+    UIP = 0x044,
+
     SSTATUS = 0x100,
+    SIE = 0x104,
     STVEC = 0x105,
     SEPC = 0x141,
     SCAUSE = 0x142,
     STVAL = 0x143,
+    SIP = 0x144,
     SATP = 0x180,
 
     MSTATUS = 0x300,
@@ -80,6 +121,7 @@ enum CSR {
     MIDELEG = 0x303,
     MIE = 0x304,
     MTVEC = 0x305,
+    MSCRATCH = 0x340,
     MEPC = 0x341,
     MCAUSE = 0x342,
     MTVAL = 0x343,
@@ -116,6 +158,32 @@ typedef struct Clint {
     uint64_t mtime;
 } Clint;
 
+typedef struct Plic {
+    uint32_t priority[1024];
+    uint32_t irq;
+    uint64_t enable_bits;
+    uint32_t threshold;
+    uint32_t clain_complete;
+} Plic;
+
+typedef struct Virtio {
+    uint32_t host_features;
+    uint32_t guest_features;
+    uint32_t guest_page_size;
+    uint32_t queue_num_max;
+    uint32_t queue_num;
+    uint32_t queue_align;
+    uint32_t queue_pfn;
+    uint32_t queue_notify;
+    uint32_t interrupt_status;
+    uint32_t interrupt_ack;
+    uint32_t status;
+    uint32_t *config;
+
+    uint32_t id;
+    uint8_t *disk;
+} Virtio;
+
 typedef struct State {
     uint64_t pc;
     uint64_t csr[4096];
@@ -125,6 +193,8 @@ typedef struct State {
 
     Uart *uart;
     Clint *clint;
+    Plic *plic;
+    Virtio *virtio;
 
     bool excepted;
     uint64_t exception_code;
@@ -148,6 +218,16 @@ Vec *CreateVec();
 void GrowVec(Vec *v, int n);
 void PushVec(Vec *v, void *item);
 void *GetVec(Vec *v, int idx);
+void SetVec(Vec *v, int idx, void *item);
+
+bool IsVirtioInterrupting(State *state);
+uint64_t DescAddr(State *state);
+uint8_t ReadDisk(State *state, uint64_t addr);
+void WriteDisk(State *state, uint64_t addr, uint8_t value);
+void DiskAccess(State *state);
+
+void HandleTrap(State *state, uint64_t instr_addr);
+bool HandleInterrupt(State *state, uint64_t instr_addr);
 
 uint64_t GetRange(uint64_t v, uint64_t start, uint64_t end);
 uint64_t Translate(State *state, uint64_t v_addr, uint8_t access_type);

@@ -22,34 +22,26 @@ uint64_t GetRange(uint64_t v, uint64_t start, uint64_t end) {
     return (v & (mask << start)) >> start;
 }
 
-void ClintTick(State *state) {
-    state->clint->mtime++;
-    if ((state->clint->msip & 1) != 0) {
-        WriteCSR(state, MIP, 3, 3, 1);
-    }
-    if (state->clint->mtimecmp > 0 && state->clint->mtime >= state->clint->mtimecmp) {
-        WriteCSR(state, MIP, 7, 7, 1);
-    }
-}
-
 void HandleTrap(State *state, uint64_t instr_addr) {
     uint8_t prev_mode = state->mode;
     uint64_t cause = state->exception_code;
-    printf("Trap pc: %llx, cause: %lld\n", state->pc, cause);
+    printf("Trap: addr: 0x%llx, cause: 0x%llx\n", instr_addr, cause);
     uint64_t mdeleg = MEDELEG;
     if (cause & SetOneBit(63)) {
         mdeleg = MIDELEG;
     }
-    // printf("Trap cause: %d\n", cause);
-    if (state->mode <= SUPERVISOR && state->csr[mdeleg] >> cause & 1) {
+    // if (state->mode == USER) {
+    //     cause = 8;
+    // }
+    if (state->mode <= SUPERVISOR && state->csr[mdeleg] >> (cause & 0xffff) & 1) {
         state->mode = SUPERVISOR;
-        state->csr[SEPC] = state->pc;
+        state->csr[SEPC] = instr_addr;
         uint64_t vector = 0;
         if (ReadCSR(state, STVEC, 0, 0) == 1) {
             vector = 4 * (cause & SetNBits(63));
         }
         state->pc = (state->csr[STVEC] & ~1) + vector;
-        state->csr[SCAUSE] = state->exception_code;
+        state->csr[SCAUSE] = cause;
         state->csr[STVAL] = 0;
         WriteCSR(state, SSTATUS, 5, 5, ReadCSR(state, SSTATUS, 1, 1));
         WriteCSR(state, SSTATUS, 1, 1, 0);
@@ -60,59 +52,169 @@ void HandleTrap(State *state, uint64_t instr_addr) {
         }
     } else {
         state->mode = MACHINE;
-        state->csr[MEPC] = state->pc;
+        state->csr[MEPC] = instr_addr;
         uint64_t vector = 0;
         if (ReadCSR(state, MTVEC, 0, 0) == 1) {
             vector = 4 * (cause & SetNBits(63));
         }
         state->pc = (state->csr[MTVEC] & ~1) + vector;
-        state->csr[MCAUSE] = state->exception_code;
+        state->csr[MCAUSE] = cause;
         state->csr[MTVAL] = 0;
         // Save current Mode into CSRs[mstatus].MPP.
         WriteCSR(state, MSTATUS, 11, 12, prev_mode);
     }
 }
 
-void HandleInterrupt(State *state, uint64_t instr_addr) {
-    uint16_t mint = ReadCSR(state, MIP, 0, 15) & ReadCSR(state, MIE, 0, 15);
+bool HandleInterrupt(State *state, uint64_t instr_addr) {
+    uint16_t mint = 0;
+    if (state->mode == MACHINE) {
+        if (ReadCSR(state, MSTATUS, 3, 3) == 0) {
+            return false;
+        }
+
+        mint = ReadCSR(state, MIP, 0, 15) & ReadCSR(state, MIE, 0, 15);
+    } else if (state->mode == SUPERVISOR) {
+        if (ReadCSR(state, SSTATUS, 1, 1) == 0) {
+            return false;
+        }
+
+        mint = ReadCSR(state, SIP, 0, 15) & ReadCSR(state, SIE, 0, 15);
+    } else if (state->mode == USER) {
+        mint = ReadCSR(state, SIP, 0, 15) & ReadCSR(state, SIE, 0, 15);
+    }
+    if (mint == 0) {
+        return false;
+    }
+
+    // uint16_t mint = ReadCSR(state, MIP, 0, 15) & ReadCSR(state, MIE, 0, 15);
+    // printf("MIP: 0x%llx, MIE: 0x%llx\n", state->csr[MIP], state->csr[MIE]);
+    uint64_t exception_code = 0;
     bool interrupted = true;
     if (mint & SetOneBit(11)) {
-        state->exception_code = SetOneBit(63) | 11;
+        exception_code = SetOneBit(63) | 11;
     } else if (mint & SetOneBit(9)) {
-        state->exception_code = SetOneBit(63) | 9;
+        exception_code = SetOneBit(63) | 9;
+        // printf("Machine External Interrupt\n");
     } else if (mint & SetOneBit(7)) {
-        state->exception_code = SetOneBit(63) | 7;
+        exception_code = SetOneBit(63) | 7;
+        // printf("mtimecmp: %llx, mtime: %llx\n", state->clint->mtimecmp, state->clint->mtime);
     } else if (mint & SetOneBit(5)) {
-        state->exception_code = SetOneBit(63) | 5;
+        exception_code = SetOneBit(63) | 5;
     } else if (mint & SetOneBit(3)) {
-        state->exception_code = SetOneBit(63) | 3;
+        exception_code = SetOneBit(63) | 3;
     } else if (mint & SetOneBit(1)) {
-        state->exception_code = SetOneBit(63) | 1;
+        exception_code = SetOneBit(63) | 1;
     } else {
-        // There's no pending interrupt or the interrupt doesn't implemented yet.
+        // There's no pending interrupt or the interrupt isn't implemented yet.
         interrupted = false;
     }
 
     if (interrupted) {
         state->excepted = true;
+        state->exception_code = exception_code;
         HandleTrap(state, instr_addr);
+        if (state->mode == MACHINE) {
+            WriteCSR(state, MIP, exception_code & 0xffff, exception_code & 0xffff, 0);
+        } else if (state->mode == SUPERVISOR) {
+            WriteCSR(state, SIP, exception_code & 0xffff, exception_code & 0xffff, 0);
+        } else if (state->mode == USER) {
+            WriteCSR(state, SIP, exception_code & 0xffff, exception_code & 0xffff, 0);
+        }
+        return true;
+    }
+
+    return false;
+}
+
+void ClintTick(State *state) {
+    state->clint->mtime++;
+
+    WriteCSR(state, MIP, 3, 3, 0);
+    if ((state->clint->msip & 1) != 0) {
+        WriteCSR(state, MIP, 3, 3, 1);
+    }
+
+    WriteCSR(state, MIP, 7, 7, 0);
+    if (state->clint->mtimecmp > 0 && state->clint->mtime >= state->clint->mtimecmp) {
+        // state->clint->mtime = 0;
+        // WriteCSR(state, MIP, 7, 7, 1);
+    }
+}
+
+void PlicTick(State *state, bool virtio_int, bool uart_int) {
+    uint32_t virtio_irq = VIRTIO_IRQ;
+    uint32_t uart_irq = UART_IRQ;
+    uint32_t virtio_priority = state->plic->priority[virtio_irq];
+    uint32_t uart_priority = state->plic->priority[uart_irq];
+    bool virtio_enable = state->plic->enable_bits >> virtio_irq & 1;
+    bool uart_enable = state->plic->enable_bits >> uart_irq & 1;
+
+    bool ints[2] = {virtio_int, uart_int};
+    uint32_t irqs[2] = {virtio_irq, uart_irq};
+    uint32_t priorities[2] = {virtio_priority, uart_priority};
+    bool enables[2] = {virtio_enable, uart_enable};
+
+    int priority = 0;
+    int irq = 0;
+    for (int i = 0; i < 2; i++) {
+        // if (ints[i])
+        //     printf("irqs[i]: %x, ints[i]: %d, enables[i]: %d, priorities[i]: %d, priority: %d, threshold: %d\n", irqs[i], ints[i], enables[i], priorities[i], priority, state->plic->threshold);
+        if (ints[i] && enables[i] && priorities[i] > priority && priorities[i] > state->plic->threshold) {
+            irq = irqs[i];
+            priority = priorities[i];
+        }
+    }
+
+    if (irq != 0) {
+        // printf("Interrupted: irq: %d, virtio_int: %d\n", irq, virtio_int);
+        state->plic->irq = irq;
+        if (state->mode == MACHINE) {
+            WriteCSR(state, MIP, 9, 9, 1);
+        } else if (state->mode == SUPERVISOR) {
+            WriteCSR(state, SIP, 9, 9, 1);
+        }
+    }
+}
+
+void VirtioTick(State *state) {
+    if (state->virtio->queue_notify != 0x1234) {
+        printf("virtio enabled: pc: %llx\n", state->pc);
+        state->virtio->interrupt_status |= 1;
+        DiskAccess(state);
+        state->virtio->queue_notify = 0x1234;
     }
 }
 
 void Tick(State *state) {
     state->clock++;
+    uint8_t b_mode = state->mode;
+    uint64_t b_sepc = state->csr[SEPC];
+    uint64_t pc = state->pc;
     uint32_t instr = Fetch32(state, state->pc);
     
-    if (!state->excepted) {
-        ExecInstruction(state, instr);
-    }
-    ClintTick(state);
+    ExecInstruction(state, instr);
     state->x[0] = 0;
 
     if (state->excepted) {
-        HandleTrap(state, state->pc);
+        HandleTrap(state, pc);
         state->excepted = false;
         state->exception_code = 0;
+    }
+
+    VirtioTick(state);
+    ClintTick(state);
+    PlicTick(state, IsVirtioInterrupting(state), false);
+    bool interrupted = HandleInterrupt(state, state->pc);
+    if (interrupted && state->excepted) {
+        state->excepted = false;
+        state->exception_code = 0;
+    }
+
+    if (state->csr[SEPC] != b_sepc) {
+        printf("sepc changed: pc: 0x%llx, 0x%llx to 0x%llx\n", Translate(state, state->pc, AccessInstruction), b_sepc, state->csr[SEPC]);
+    }
+    if (state->mode != b_mode) {
+        printf("mode changed: pc: 0x%llx, %x to %x\n", Translate(state, state->pc, AccessInstruction), b_mode, state->mode);
     }
 }
 
@@ -142,10 +244,11 @@ uint8_t UartRead(State *state, uint64_t offset) {
     }
 }
 
-void WriteRange8(uint64_t *dest, uint8_t val, uint64_t start) {
-    uint8_t mask = *dest & (SetNBits(8) << (start * 8));
-    *dest ^= mask;
-    *dest |= val << (start * 8);
+uint64_t WriteRange8(uint64_t dest, uint8_t val, uint64_t start) {
+    uint8_t mask = dest & (SetNBits(8) << (start * 8));
+    dest ^= mask;
+    dest |= val << (start * 8);
+    return dest;
 }
 
 uint8_t ReadRange8(uint64_t src, uint64_t start) {
@@ -154,11 +257,11 @@ uint8_t ReadRange8(uint64_t src, uint64_t start) {
 
 void ClintWrite(State *state, uint64_t offset, uint8_t val) {
     if (offset >= CLINT_MSIP_BASE && offset < CLINT_MSIP_BASE + CLINT_MSIP_SIZE) {
-        WriteRange8((uint64_t *)&state->clint->msip, val, offset - CLINT_MSIP_BASE);
+        state->clint->msip = WriteRange8(state->clint->msip, val, offset - CLINT_MSIP_BASE);
     } else if (offset >= CLINT_MTIMECMP_BASE && offset < CLINT_MTIMECMP_BASE + CLINT_MTIMECMP_SIZE) {
-        WriteRange8(&state->clint->mtimecmp, val, offset - CLINT_MTIMECMP_BASE);
+        state->clint->mtimecmp = WriteRange8(state->clint->mtimecmp, val, offset - CLINT_MTIMECMP_BASE);
     } else if (offset >= CLINT_MTIME_BASE && offset < CLINT_MTIME_BASE + CLINT_MTIME_SIZE) {
-        WriteRange8(&state->clint->mtime, val, offset - CLINT_MTIME_BASE);
+        state->clint->mtime = WriteRange8(state->clint->mtime, val, offset - CLINT_MTIME_BASE);
     } else {
         // Do nothing.
     }
@@ -176,6 +279,164 @@ uint8_t ClintRead(State *state, uint64_t offset) {
     }
 }
 
+void PlicWrite(State *state, uint64_t offset, uint8_t val) {
+    if (offset >= PLIC_PRIORITY_BASE && offset < PLIC_PRIORITY_BASE + PLIC_PRIORITY_SIZE) {
+        state->plic->priority[(offset - PLIC_PRIORITY_BASE + 4) / 4] = WriteRange8(state->plic->priority[(offset - PLIC_PRIORITY_BASE + 4) / 4], val, (offset - PLIC_PRIORITY_BASE + 4) % 4);
+    } else if (offset >= PLIC_ENABLE_BASE && offset < PLIC_ENABLE_BASE + PLIC_ENABLE_SIZE) {
+        state->plic->enable_bits = WriteRange8(state->plic->enable_bits, val, offset - PLIC_ENABLE_BASE);
+    } else if (offset >= PLIC_THRESHOLD_BASE && offset < PLIC_THRESHOLD_BASE + PLIC_THRESHOLD_SIZE) {
+        state->plic->threshold = WriteRange8(state->plic->threshold, val, offset - PLIC_THRESHOLD_BASE);
+    } else if (offset >= PLIC_IRQ_BASE && offset < PLIC_IRQ_BASE + PLIC_IRQ_SIZE) {
+        state->plic->irq = WriteRange8(state->plic->irq, val, offset - PLIC_IRQ_BASE);
+    }
+}
+
+uint8_t PlicRead(State *state, uint64_t offset) {
+    if (offset >= PLIC_PRIORITY_BASE && offset < PLIC_PRIORITY_BASE + PLIC_PRIORITY_SIZE) {
+        return ReadRange8(state->plic->priority[(offset - PLIC_PRIORITY_BASE) / 4], (offset - PLIC_PRIORITY_BASE) % 4);
+    } else if (offset >= PLIC_ENABLE_BASE && offset < PLIC_ENABLE_BASE + PLIC_ENABLE_SIZE) {
+        return ReadRange8(state->plic->enable_bits, offset - PLIC_ENABLE_BASE);
+    } else if (offset >= PLIC_THRESHOLD_BASE && offset < PLIC_THRESHOLD_BASE + PLIC_THRESHOLD_SIZE) {
+        return ReadRange8(state->plic->threshold, offset - PLIC_THRESHOLD_BASE);
+    } else if (offset >= PLIC_IRQ_BASE && offset < PLIC_IRQ_BASE + PLIC_IRQ_SIZE) {
+        return ReadRange8(state->plic->irq, offset - PLIC_IRQ_BASE);
+    } else {
+        return 0;
+    }
+}
+
+bool IsVirtioInterrupting(State *state) {
+    if ((state->virtio->interrupt_status & 1) == 1) {
+        return true;
+    }
+    return false;
+}
+
+uint64_t GetNewId(State *state) {
+    state->virtio->id += 1;
+    return state->virtio->id;
+}
+
+uint64_t DescAddr(State *state) {
+    return (uint64_t)state->virtio->queue_pfn * (uint64_t)state->virtio->guest_page_size;
+}
+
+uint8_t ReadDisk(State *state, uint64_t addr) {
+    return state->virtio->disk[addr];
+}
+
+void WriteDisk(State *state, uint64_t addr, uint8_t value) {
+    state->virtio->disk[addr] = value;
+}
+
+void DiskAccess(State *state) {
+    // printf("Disk Access\n");
+    uint64_t desc_addr = DescAddr(state);
+    // printf("rve: desc: %lld\n", (int64_t)desc_addr);
+    uint64_t avail_addr = DescAddr(state) + 8 * 16;
+    // printf("rve: avail: %lld\n", (int64_t)avail_addr);
+    uint64_t used_addr = DescAddr(state) + 4096;
+    // printf("rve: used: %lld\n", (int64_t)used_addr);
+
+    uint32_t queue_size = state->virtio->queue_num;
+    uint16_t offset = Read16(state, avail_addr);
+    uint16_t index = Read16(state, avail_addr + 2);
+    uint64_t index_addr = avail_addr + 4 + (uint64_t)state->virtio->id * 2 /*desc_addr + VRING_DESC_SIZE * index*/;
+    uint64_t head_index = Read16(state, index_addr) % queue_size;
+    uint64_t desc_addr0 = desc_addr + VRING_DESC_SIZE * head_index;
+    uint64_t addr0 = Read64(state, desc_addr0);
+    uint16_t next0 = Read16(state, desc_addr0 + 14);
+    uint64_t desc_addr1 = desc_addr + VRING_DESC_SIZE * next0;
+    uint64_t addr1 = Read64(state, desc_addr1);
+    uint32_t len1 = Read32(state, desc_addr1 + 8);
+    uint16_t flags1 = Read16(state, desc_addr1 + 12);
+    uint16_t next1 = Read64(state, desc_addr1 + 14);
+    uint64_t desc_addr2 = desc_addr + VRING_DESC_SIZE * next1;
+    uint64_t addr2 = Read64(state, desc_addr2);
+    uint32_t len2 = Read32(state, desc_addr2 + 8);
+    uint16_t flags2 = Read16(state, desc_addr2 + 12);
+
+    uint64_t blk_sector = Read64(state, addr0 + 8);
+
+    if ((flags1 & 2) == 0) {
+        for (uint64_t i = 0; i < len1; i++) {
+            uint8_t data = Read8(state, addr1 + i);
+            WriteDisk(state, blk_sector * 512 + i, data);
+        }
+    } else {
+        for (uint64_t i = 0; i < len1; i++) {
+            uint8_t data = ReadDisk(state, blk_sector * 512 + i);
+            Write8(state, addr1 + i, data);
+            // printf("DiskRead disk_addr: %llx, addr: %llx, %c\n", blk_sector * 512 + i, addr1 + i, data);
+        }
+    }
+
+    if (flags2 & 2) {
+        Write8(state, addr2, 0);
+    } else {
+        Error("Third descriptor must be write mode");
+    }
+
+    uint64_t new_id = GetNewId(state) % queue_size;
+    Write16(state, used_addr + 2, new_id % 8);
+}
+
+void VirtioWrite(State *state, uint64_t offset, uint8_t val) {
+    if (offset >= VIRTIO_GUEST_FEATURES_BASE && offset < VIRTIO_GUEST_FEATURES_BASE + 4) {
+        state->virtio->guest_features = WriteRange8(state->virtio->guest_features, val, offset - VIRTIO_GUEST_FEATURES_BASE);
+        return;
+    } else if (offset >= VIRTIO_GUEST_PAGE_SIZE_BASE && offset < VIRTIO_GUEST_PAGE_SIZE_BASE + 4) {
+        state->virtio->guest_page_size = WriteRange8(state->virtio->guest_page_size, val, offset - VIRTIO_GUEST_PAGE_SIZE_BASE);
+        return;
+    } else if (offset >= VIRTIO_QUEUE_NUM_BASE && offset < VIRTIO_QUEUE_NUM_BASE + 4) {
+        state->virtio->queue_num = WriteRange8(state->virtio->queue_num, val, offset - VIRTIO_QUEUE_NUM_BASE);
+        return;
+    } else if (offset >= VIRTIO_QUEUE_ALIGN_BASE && offset < VIRTIO_QUEUE_ALIGN_BASE + 4) {
+        state->virtio->queue_align = WriteRange8(state->virtio->queue_align, val, offset - VIRTIO_QUEUE_ALIGN_BASE);
+        return;
+    } else if (offset >= VIRTIO_QUEUE_PFN_BASE && offset < VIRTIO_QUEUE_PFN_BASE + 4) {
+        state->virtio->queue_pfn = WriteRange8(state->virtio->queue_pfn, val, offset - VIRTIO_QUEUE_PFN_BASE);
+        return;
+    } else if (offset >= VIRTIO_QUEUE_NOTIFY_BASE && offset < VIRTIO_QUEUE_NOTIFY_BASE + 4) {
+        state->virtio->queue_notify = WriteRange8(state->virtio->queue_notify, val, offset - VIRTIO_QUEUE_NOTIFY_BASE);
+        return;
+    } else if (offset >= VIRTIO_INTERRUPT_ACK_BASE && offset < VIRTIO_INTERRUPT_ACK_BASE + 4) {
+        if ((val & 1) == 1) {
+            state->virtio->interrupt_status &= ~1;
+            printf("virtio disabled: pc: %llx, interrupt_status: %d\n", state->pc, state->virtio->interrupt_status);
+        }
+        state->virtio->interrupt_ack = WriteRange8(state->virtio->interrupt_ack, val, offset - VIRTIO_INTERRUPT_ACK_BASE);
+        return;
+    } else if (offset >= VIRTIO_STATUS_BASE && offset < VIRTIO_STATUS_BASE + 4) {
+        state->virtio->status = WriteRange8(state->virtio->status, val, offset - VIRTIO_STATUS_BASE);
+        return;
+    }
+}
+
+uint8_t VirtioRead(State *state, uint64_t offset) {
+    if (offset >= VIRTIO_MAGIC_VALUE_BASE && offset < VIRTIO_MAGIC_VALUE_BASE + 4) {
+        return ReadRange8(0x74726976, offset - VIRTIO_MAGIC_VALUE_BASE);
+    } else if (offset >= VIRTIO_DEVICE_VERSION_BASE && offset < VIRTIO_DEVICE_VERSION_BASE + 4) {
+        return ReadRange8(0x01, offset - VIRTIO_DEVICE_VERSION_BASE);
+    } else if (offset >= VIRTIO_DEVICE_ID_BASE && offset < VIRTIO_DEVICE_ID_BASE + 4) {
+        return ReadRange8(0x02, offset - VIRTIO_DEVICE_ID_BASE);
+    } else if (offset >= VIRTIO_VENDOR_ID_BASE && offset < VIRTIO_VENDOR_ID_BASE + 4) {
+        return ReadRange8(0x554d4551, offset - VIRTIO_VENDOR_ID_BASE);
+    } else if (offset >= VIRTIO_HOST_FEATURES_BASE && offset < VIRTIO_HOST_FEATURES_BASE + 4) {
+        return ReadRange8(state->virtio->host_features, offset - VIRTIO_HOST_FEATURES_BASE);
+    } else if (offset >= VIRTIO_QUEUE_NUM_MAX_BASE && offset < VIRTIO_QUEUE_NUM_MAX_BASE + 4) {
+        return ReadRange8(0x2000, offset - VIRTIO_QUEUE_NUM_MAX_BASE);
+    } else if (offset >= VIRTIO_QUEUE_PFN_BASE && offset < VIRTIO_QUEUE_PFN_BASE + 4) {
+        return ReadRange8(state->virtio->queue_pfn, offset - VIRTIO_QUEUE_PFN_BASE);
+    } else if (offset >= VIRTIO_INTERRUPT_STATUS_BASE && offset < VIRTIO_INTERRUPT_STATUS_BASE + 4) {
+        return ReadRange8(state->virtio->interrupt_status, offset - VIRTIO_INTERRUPT_STATUS_BASE);
+    } else if (offset >= VIRTIO_STATUS_BASE && offset < VIRTIO_STATUS_BASE + 4) {
+        return ReadRange8(state->virtio->status, offset - VIRTIO_STATUS_BASE);
+    } else {
+        return 0;
+    }
+}
+
 void MemWrite8(State *state, uint64_t addr, uint8_t val) {
     if (addr >= UART_BASE && addr < (UART_BASE + UART_SIZE)) {
         UartWrite(state, addr - UART_BASE, val);
@@ -184,15 +445,17 @@ void MemWrite8(State *state, uint64_t addr, uint8_t val) {
         ClintWrite(state, addr - CLINT_BASE, val);
         return;
     } else if (addr >= PLIC_BASE && addr < (PLIC_BASE + PLIC_SIZE)) {
+        PlicWrite(state, addr - PLIC_BASE, val);
         return;
     } else if (addr >= VIRTIO_BASE && addr < (VIRTIO_BASE + VIRTIO_SIZE)) {
+        VirtioWrite(state, addr - VIRTIO_BASE, val);
         return;
     } else if (addr >= DRAM_BASE) {
         *(uint8_t *)(state->mem + (addr - DRAM_BASE)) = val;
         return;
     }
     state->excepted = true;
-    state->exception_code = InstructionAccessFault;
+    state->exception_code = StoreAMOPageFault;
     return;
 }
 
@@ -242,14 +505,14 @@ uint8_t MemRead8(State *state, uint64_t addr) {
     } else if (addr >= CLINT_BASE && addr < (CLINT_BASE + CLINT_SIZE)) {
         return ClintRead(state, addr - CLINT_BASE);
     } else if (addr >= PLIC_BASE && addr < (PLIC_BASE + PLIC_SIZE)) {
-        return 0;
+        return PlicRead(state, addr - PLIC_BASE);
     } else if (addr >= VIRTIO_BASE && addr < (VIRTIO_BASE + VIRTIO_SIZE)) {
-        return 0;
+        return VirtioRead(state, addr - VIRTIO_BASE);
     } else if (addr >= DRAM_BASE) {
         return *(uint8_t *)(state->mem + (addr - DRAM_BASE));
     }
     state->excepted = true;
-    state->exception_code = InstructionAccessFault;
+    state->exception_code = LoadPageFault;
     return 0;
 }
 
@@ -362,7 +625,7 @@ uint64_t Translate(State *state, uint64_t v_addr, uint8_t access_type) {
     uint8_t pte_rsw;
     uint64_t pte_ppn;
     uint64_t pa;
-step_1:
+step1:
     // printf("step1\n");
     page_fault = false;
     uint64_t va = GetRange(v_addr, VALEN, XLEN - 1);
@@ -373,6 +636,7 @@ step_1:
         page_fault = true;
     }
     if (page_fault) {
+        printf("step1 page fault\n");
         PageFault(state, access_type);
         return v_addr;
     }
@@ -402,6 +666,7 @@ step4:
     pte_ppn = pte >> 10;
     pte_rsw = pte >> 8 & SetNBits(2);
     if (pte_v == 0 || (pte_r == 0 && pte_w == 1)) {
+        printf("step4 page fault\n");
         PageFault(state, access_type);
         return v_addr;
     }
@@ -414,6 +679,7 @@ step5:
     } else {
         i--;
         if (i < 0) {
+            printf("step5 page fault\n");
             PageFault(state, access_type);
             return v_addr;
         } else {
@@ -426,32 +692,36 @@ step6:
     // printf("step6\n");
     page_fault = false;
     // When SUM=0, S-mode memory accesses to pages that areaccessible by U-mode (U=1 in Figure 4.17) will fault. 
-    if (ReadCSR(state, MSTATUS, 18, 18) == 0 && pte_u == 1) {
-        page_fault = true;
-    }
+    // if (ReadCSR(state, MSTATUS, 18, 18) == 0 && pte_u == 1) {
+    //     page_fault = true;
+    // }
     if (access_type == AccessInstruction) {
         if (pte_x == 0) {
+            printf("AccessInstruction Page Fault\n");
             page_fault = true;
         }
     }
     if (access_type == AccessLoad) {
-        if (ReadCSR(state, MSTATUS, 19, 19) == 0) {
-            if (pte_r == 0) {
-                page_fault = true;
-            }
-        } else if (ReadCSR(state, MSTATUS, 19, 19) == 1) {
-            if (pte_r == 0 || pte_x == 0) {
-                page_fault = true;
-            }
+        // if (ReadCSR(state, MSTATUS, 19, 19) == 0) {
+        if (pte_r == 0) {
+            printf("AccessLoad Page Fault\n");
+            page_fault = true;
         }
+        // } else if (ReadCSR(state, MSTATUS, 19, 19) == 1) {
+        //     if (pte_r == 0 || pte_x == 0) {
+        //         page_fault = true;
+        //     }
+        // }
     }
     if (access_type == AccessStore) {
         if (pte_w == 0) {
+            printf("AccessStore Page Fault\n");
             page_fault = true;
         }
     }
 
     if (page_fault) {
+        printf("step6 page fault\n");
         PageFault(state, access_type);
         return v_addr;
     }
@@ -464,6 +734,7 @@ step7:
         }
     }
     if (page_fault) {
+        printf("step7 page fault\n");
         PageFault(state, access_type);
         return v_addr;
     }
@@ -538,6 +809,7 @@ uint64_t Read64(State *state, uint64_t v_addr) {
 uint32_t Fetch32(State *state, uint64_t v_addr) {
     uint64_t p_addr = Translate(state, v_addr, AccessInstruction);
     if (state->excepted) return 0;
+    // printf("v_addr: %llx -> p_addr: %llx\n", v_addr, p_addr);
     return MemRead32(state, p_addr);
 }
 
@@ -579,6 +851,7 @@ bool Require(State *state, uint8_t mode) {
     }
 
     state->excepted = true;
+    printf("Require Illegal Instruction: pc: 0x%llx, state->mode: %d, mode: %d\n", state->pc, state->mode, mode);
     state->exception_code = IllegalInstruction;
     return false;
 }
@@ -711,9 +984,9 @@ void ExecAuipc(State *state, uint32_t instr) {
 
 void ExecLui(State *state, uint32_t instr) {
     uint8_t rd = (instr >> 7) & SetNBits(5);
-    int64_t immediate = Sext((instr >> 12) & SetNBits(20), 19);
+    uint64_t immediate = (instr >> 12) & SetNBits(20);
 
-    state->x[rd] = immediate << 12;
+    state->x[rd] = Sext(immediate << 12, 31);
 }
 
 void ExecAdd(State *state, uint32_t instr) {
@@ -771,7 +1044,7 @@ void ExecMulhsu(State *state, uint32_t instr) {
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
     state->x[rd] =
-        ((__int128_t)state->x[rs1] * (__uint128_t)state->x[rs2]) >> XLEN;
+        ((__int128_t)state->x[rs1] * (__uint128_t)(uint64_t)state->x[rs2]) >> XLEN;
 }
 
 void ExecSltu(State *state, uint32_t instr) {
@@ -788,7 +1061,7 @@ void ExecMulhu(State *state, uint32_t instr) {
     uint8_t rs2 = (instr >> 20) & SetNBits(5);
 
     state->x[rd] =
-        (int64_t)(((__int128_t)state->x[rs1] * (__int128_t)state->x[rs2]) >> XLEN);
+        ((__uint128_t)(uint64_t)state->x[rs1] * (__uint128_t)(uint64_t)state->x[rs2]) >> XLEN;
 }
 
 void ExecXor(State *state, uint32_t instr) {
@@ -910,7 +1183,7 @@ void ExecOpInstr(State *state, uint32_t instr) {
     case 0x2:
         if (funct7 == 0x00) {
             ExecSlt(state, instr);
-        } else if (funct7 == 0x02) {
+        } else if (funct7 == 0x01) {
             ExecMulhsu(state, instr);
         }
         break;
@@ -1068,6 +1341,7 @@ void ExecSb(State *state, uint32_t instr) {
     int32_t offset = Sext(
         ((instr >> 25 & SetNBits(7)) << 5) | ((instr >> 7 & SetNBits(5))), 11);
 
+    // printf("sb: pc: %llx, addr: %llx, val: %d\n", state->pc, state->x[rs1] + offset, (uint8_t)state->x[rs2]);
     Write8(state, state->x[rs1] + offset,
            (uint8_t)state->x[rs2]);
 }
@@ -1443,7 +1717,7 @@ void ExecCAddi4spn(State *state, uint16_t instr) {
     uint32_t uimm =
         ((instr >> 7 & SetNBits(4)) << 6) | ((instr >> 11 & SetNBits(2)) << 4) |
         ((instr >> 5 & SetNBits(1)) << 3) | ((instr >> 6 & SetNBits(1)) << 2);
-    int8_t rd = (instr >> 2) & SetNBits(3);
+    uint8_t rd = (instr >> 2) & SetNBits(3);
 
     state->x[8 + rd] = state->x[2] + uimm;
 }
@@ -1656,7 +1930,7 @@ void ExecCSlli(State *state, uint16_t instr) {
     uint32_t uimm =
         ((instr >> 12 & SetNBits(1)) << 5) | ((instr >> 2 & SetNBits(5)));
 
-    state->x[rd] = state->x[rd] << uimm;
+    state->x[rd] = (uint64_t)state->x[rd] << (uint64_t)uimm;
 }
 
 void ExecCLwsp(State *state, uint16_t instr) {
@@ -1724,6 +1998,7 @@ void ExecCSdsp(State *state, uint32_t instr) {
 void ExecCompressedInstr(State *state, uint16_t instr) {
     if (instr == 0) {
         state->excepted = true;
+        printf("Compressed Instr Illegal\n");
         state->exception_code = IllegalInstruction;
         return;
     }
@@ -1855,8 +2130,10 @@ void ExecCompressedInstr(State *state, uint16_t instr) {
         uint8_t f_12 = (instr >> 12) & SetNBits(1);
 
         if (funct3 == 0x0 && f_12 == 0 && f_2_6 == 0 && f_7_11 != 0) {
+            printf("c.slli64\n");
+            state->pc += 2;
             // TODO: Understand c.slli64.
-        } else if (funct3 == 0x0) {
+        } else if (funct3 == 0x0 && f_7_11 != 0) {
             ExecCSlli(state, instr);
             if (state->excepted) return;
             state->pc += 2;
@@ -1906,7 +2183,8 @@ void ExecCompressedInstr(State *state, uint16_t instr) {
 }
 
 void ExecEcall(State *state, uint32_t instr) {
-    printf("Exception\n");
+    printf("ecall: Exception: pc: 0x%llx\n", state->pc);
+    printf("ecall: a0: %llx, a1: %llx, a7: %llx\n", state->x[10], state->x[11], state->x[17]);
     state->excepted = true;
     int exception_code;
     if (state->mode == 0x3) {
@@ -1933,6 +2211,9 @@ void ExecSfencevma(State *state, uint32_t instr) {
 }
 
 void ExecWfi(State *state, uint32_t instr) {
+    printf("wfi\n");
+    PrintRegisters(state, false);
+    exit(state->x[10]);
     while (true);
 }
 
@@ -1947,6 +2228,10 @@ void ExecMret(State *state, uint32_t instr) {
 }
 
 void ExecSret(State *state, uint32_t instr) {
+    printf("sret: mode: %d, pc: 0x%llx, sepc: 0x%llx, sstatus: %llx\n", state->mode, state->pc, state->csr[SEPC], state->csr[SSTATUS]);
+    if (!Require(state, SUPERVISOR)) {
+        return;
+    }
     state->pc = state->csr[SEPC];
     state->mode = ReadCSR(state, SSTATUS, 8, 8);
     uint64_t spie = ReadCSR(state, SSTATUS, 5, 5);

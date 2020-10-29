@@ -32,3 +32,12 @@ void *GetVec(Vec *v, int idx) {
 
     return v->data[idx];
 }
+
+void SetVec(Vec *v, int idx, void *item) {
+    if (v->len <= idx || idx < 0) {
+        Error("Index out of range in SetVec: %d", idx);
+    }
+
+    free(v->data[idx]);
+    v->data[idx] = item;
+}
