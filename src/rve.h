@@ -12,6 +12,17 @@
 
 #define UART_BASE 0x10000000
 #define UART_SIZE 0x100
+#define UART_RBR 0x00
+#define UART_THR 0x00
+#define UART_IER 0x01
+#define UART_IIR 0x02
+#define UART_LCR 0x03
+#define UART_MCR 0x04
+#define UART_LSR 0x05
+#define UART_MSR 0x06
+#define UART_SCR 0x07
+#define UART_DLL 0x00
+#define UART_DLM 0x01
 
 #define PLIC_BASE 0xc000000
 #define PLIC_SIZE 0x4000000
@@ -149,6 +160,17 @@ enum RV64Sv {
 };
 
 typedef struct Uart {
+    uint8_t rbr; // addr 0
+    uint8_t thr; // addr 0
+    uint8_t ier; // addr 1
+    uint8_t iir; // addr 2
+    uint8_t lcr; // addr 3
+    uint8_t mcr; // addr 4
+    uint8_t lsr; // addr 5
+    uint8_t msr; // addr 6
+    uint8_t scr; // addr 7
+    uint8_t dll; // addr 0; if dlab = 1
+    uint8_t dlm; // addr 1; if dlab = 1
     uint8_t uart_mem[UART_SIZE];
 } Uart;
 
@@ -220,6 +242,7 @@ void PushVec(Vec *v, void *item);
 void *GetVec(Vec *v, int idx);
 void SetVec(Vec *v, int idx, void *item);
 
+bool IsUartInterrupting(State *state);
 bool IsVirtioInterrupting(State *state);
 uint64_t DescAddr(State *state);
 uint8_t ReadDisk(State *state, uint64_t addr);

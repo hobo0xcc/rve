@@ -1,6 +1,7 @@
 #include "rve.h"
 #include <stdint.h>
 #include <stdio.h>
+#include <curses.h>
 
 // Set N-bit(s).
 int64_t SetNBits(int32_t n) {
@@ -25,14 +26,11 @@ uint64_t GetRange(uint64_t v, uint64_t start, uint64_t end) {
 void HandleTrap(State *state, uint64_t instr_addr) {
     uint8_t prev_mode = state->mode;
     uint64_t cause = state->exception_code;
-    printf("Trap: addr: 0x%llx, cause: 0x%llx\n", instr_addr, cause);
+    // printf("Trap: addr: 0x%llx, cause: 0x%llx\n", instr_addr, cause);
     uint64_t mdeleg = MEDELEG;
     if (cause & SetOneBit(63)) {
         mdeleg = MIDELEG;
     }
-    // if (state->mode == USER) {
-    //     cause = 8;
-    // }
     if (state->mode <= SUPERVISOR && state->csr[mdeleg] >> (cause & 0xffff) & 1) {
         state->mode = SUPERVISOR;
         state->csr[SEPC] = instr_addr;
@@ -126,6 +124,21 @@ bool HandleInterrupt(State *state, uint64_t instr_addr) {
     return false;
 }
 
+void UartTick(State *state) {
+    if (state->uart->rbr == 0) {
+        int8_t val = getch();
+        if (val != ERR && val != 0) {
+            state->uart->rbr = val;
+            state->uart->lsr |= 0x01;
+        }
+    }
+    if (state->uart->thr != 0) {
+        addch(state->uart->thr);
+        state->uart->thr = 0;
+        state->uart->lsr |= 0x20;
+    }
+}
+
 void ClintTick(State *state) {
     state->clint->mtime++;
 
@@ -178,7 +191,7 @@ void PlicTick(State *state, bool virtio_int, bool uart_int) {
 
 void VirtioTick(State *state) {
     if (state->virtio->queue_notify != 0x1234) {
-        printf("virtio enabled: pc: %llx\n", state->pc);
+        // printf("virtio enabled: pc: %llx\n", state->pc);
         state->virtio->interrupt_status |= 1;
         DiskAccess(state);
         state->virtio->queue_notify = 0x1234;
@@ -201,9 +214,10 @@ void Tick(State *state) {
         state->exception_code = 0;
     }
 
+    UartTick(state);
     VirtioTick(state);
     ClintTick(state);
-    PlicTick(state, IsVirtioInterrupting(state), false);
+    PlicTick(state, IsVirtioInterrupting(state), IsUartInterrupting(state));
     bool interrupted = HandleInterrupt(state, state->pc);
     if (interrupted && state->excepted) {
         state->excepted = false;
@@ -211,36 +225,10 @@ void Tick(State *state) {
     }
 
     if (state->csr[SEPC] != b_sepc) {
-        printf("sepc changed: pc: 0x%llx, 0x%llx to 0x%llx\n", Translate(state, state->pc, AccessInstruction), b_sepc, state->csr[SEPC]);
+        // printf("sepc changed: pc: 0x%llx, 0x%llx to 0x%llx\n", Translate(state, state->pc, AccessInstruction), b_sepc, state->csr[SEPC]);
     }
     if (state->mode != b_mode) {
-        printf("mode changed: pc: 0x%llx, %x to %x\n", Translate(state, state->pc, AccessInstruction), b_mode, state->mode);
-    }
-}
-
-void UartWrite(State *state, uint64_t offset, uint8_t ch) {
-    if (offset == 0) {
-        state->uart->uart_mem[offset] = ch;
-        if (state->uart->uart_mem[3] & SetOneBit(7)) {
-            return;
-        }
-        putc(ch, stdout);
-        fflush(stdout);
-    } else {
-        state->uart->uart_mem[offset] = ch;
-    }
-}
-
-uint8_t UartRead(State *state, uint64_t offset) {
-    if (offset == 0) {
-        if (state->uart->uart_mem[3] & SetOneBit(7)) {
-            return state->uart->uart_mem[offset];
-        }
-        uint8_t ch = getc(stdin);
-        state->uart->uart_mem[offset] = ch;
-        return ch;
-    } else {
-        return state->uart->uart_mem[offset];
+        // printf("mode changed: pc: 0x%llx, %x to %x\n", Translate(state, state->pc, AccessInstruction), b_mode, state->mode);
     }
 }
 
@@ -253,6 +241,72 @@ uint64_t WriteRange8(uint64_t dest, uint8_t val, uint64_t start) {
 
 uint8_t ReadRange8(uint64_t src, uint64_t start) {
     return (src & (SetNBits(8) << (start * 8))) >> (start * 8);
+}
+
+void UartWrite(State *state, uint64_t offset, uint8_t val) {
+    // if (offset == 0) {
+    //     state->uart->uart_mem[offset] = ch;
+    //     if (state->uart->uart_mem[3] & SetOneBit(7)) {
+    //         return;
+    //     }
+    //     putc(ch, stdout);
+    //     fflush(stdout);
+    // } else {
+    //     state->uart->uart_mem[offset] = ch;
+    // }
+
+    uint8_t dlab = state->uart->lcr >> 7 & 1;
+    if (offset == UART_THR && dlab == 0) {
+        state->uart->thr = val;
+        // Set THRE to 0.
+        // THRE indicate that whether the thr register is zero.
+        state->uart->lsr &= ~0x20;
+    } else if (offset == UART_IER && dlab == 0) {
+        state->uart->ier = val;
+    } else if (offset == UART_LCR) {
+        state->uart->lcr = val;
+    } else if (offset == UART_MCR) {
+        state->uart->mcr = val;
+    } else if (offset == UART_SCR) {
+        state->uart->scr = val;
+    }
+}
+
+uint8_t UartRead(State *state, uint64_t offset) {
+    // if (offset == 0) {
+    //     if (state->uart->uart_mem[3] & SetOneBit(7)) {
+    //         return state->uart->uart_mem[offset];
+    //     }
+    //     uint8_t ch = getc(stdin);
+    //     state->uart->uart_mem[offset] = ch;
+    //     return ch;
+    // } else {
+    //     return state->uart->uart_mem[offset];
+    // }
+
+    uint8_t dlab = state->uart->lcr >> 7 & 1;
+    if (offset == UART_RBR && dlab == 0) {
+        uint8_t rbr = state->uart->rbr;
+        state->uart->rbr = 0;
+        state->uart->lsr &= ~0x01;
+        return rbr;
+    } else if (offset == UART_IER && dlab == 0) {
+        return state->uart->ier;
+    } else if (offset == UART_IIR) {
+        return state->uart->iir;
+    } else if (offset == UART_LCR) {
+        return state->uart->lcr;
+    } else if (offset == UART_MCR) {
+        return state->uart->mcr;
+    } else if (offset == UART_LSR) {
+        return state->uart->lsr;
+    } else if (offset == UART_MSR) {
+        return state->uart->msr;
+    } else if (offset == UART_SCR) {
+        return state->uart->scr;
+    } else {
+        return 0;
+    }
 }
 
 void ClintWrite(State *state, uint64_t offset, uint8_t val) {
@@ -303,6 +357,25 @@ uint8_t PlicRead(State *state, uint64_t offset) {
     } else {
         return 0;
     }
+}
+
+bool IsUartInterrupting(State *state) {
+    if ((state->uart->ier & 0x1) != 0) {
+        if (state->uart->rbr != 0) {
+            state->uart->iir = 0x04;
+            return true;
+        }
+    }
+
+    if ((state->uart->ier & 0x2) != 0) {
+        if (state->uart->thr == 0) {
+            state->uart->iir = 0x02;
+            return true;
+        }
+    }
+
+    state->uart->iir = 0xf;
+    return false;
 }
 
 bool IsVirtioInterrupting(State *state) {
@@ -403,7 +476,7 @@ void VirtioWrite(State *state, uint64_t offset, uint8_t val) {
     } else if (offset >= VIRTIO_INTERRUPT_ACK_BASE && offset < VIRTIO_INTERRUPT_ACK_BASE + 4) {
         if ((val & 1) == 1) {
             state->virtio->interrupt_status &= ~1;
-            printf("virtio disabled: pc: %llx, interrupt_status: %d\n", state->pc, state->virtio->interrupt_status);
+            // printf("virtio disabled: pc: %llx, interrupt_status: %d\n", state->pc, state->virtio->interrupt_status);
         }
         state->virtio->interrupt_ack = WriteRange8(state->virtio->interrupt_ack, val, offset - VIRTIO_INTERRUPT_ACK_BASE);
         return;
@@ -636,7 +709,7 @@ step1:
         page_fault = true;
     }
     if (page_fault) {
-        printf("step1 page fault\n");
+        // printf("step1 page fault\n");
         PageFault(state, access_type);
         return v_addr;
     }
@@ -666,7 +739,7 @@ step4:
     pte_ppn = pte >> 10;
     pte_rsw = pte >> 8 & SetNBits(2);
     if (pte_v == 0 || (pte_r == 0 && pte_w == 1)) {
-        printf("step4 page fault\n");
+        // printf("step4 page fault\n");
         PageFault(state, access_type);
         return v_addr;
     }
@@ -679,7 +752,7 @@ step5:
     } else {
         i--;
         if (i < 0) {
-            printf("step5 page fault\n");
+            // printf("step5 page fault\n");
             PageFault(state, access_type);
             return v_addr;
         } else {
@@ -851,7 +924,7 @@ bool Require(State *state, uint8_t mode) {
     }
 
     state->excepted = true;
-    printf("Require Illegal Instruction: pc: 0x%llx, state->mode: %d, mode: %d\n", state->pc, state->mode, mode);
+    // printf("Require Illegal Instruction: pc: 0x%llx, state->mode: %d, mode: %d\n", state->pc, state->mode, mode);
     state->exception_code = IllegalInstruction;
     return false;
 }
@@ -910,7 +983,7 @@ void ExecSrli(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t immediate = (instr >> 20) & SetNBits(6);
 
-    state->x[rd] = (uint64_t)state->x[rs1] >> (uint64_t)immediate;
+    state->x[rd] = (int64_t)((uint64_t)state->x[rs1] >> (uint32_t)immediate);
 }
 
 void ExecSrai(State *state, uint32_t instr) {
@@ -940,6 +1013,7 @@ void ExecAndi(State *state, uint32_t instr) {
 void ExecOpImmInstr(State *state, uint32_t instr) {
     uint8_t funct3 = (instr >> 12) & SetNBits(3);
     uint8_t funct7 = (instr >> 25) & SetNBits(7);
+    uint8_t funct6 = (instr >> 26) & SetNBits(6);
 
     switch (funct3) {
     case 0x0:
@@ -958,9 +1032,9 @@ void ExecOpImmInstr(State *state, uint32_t instr) {
         ExecXori(state, instr);
         break;
     case 0x5:
-        if (funct7 == 0x00) {
+        if (funct6 == 0x00) {
             ExecSrli(state, instr);
-        } else if (funct7 == 0x20) {
+        } else if (funct6 == 0x10) {
             ExecSrai(state, instr);
         }
         break;
@@ -1525,7 +1599,8 @@ void ExecSlliw(State *state, uint32_t instr) {
     uint8_t rs1 = (instr >> 15) & SetNBits(5);
     uint8_t immediate = (instr >> 20) & SetNBits(5);
 
-    state->x[rd] = Sext(((uint64_t)state->x[rs1] << (uint64_t)immediate) & SetNBits(32), 31);
+    // state->x[rd] = Sext((state->x[rs1] << (uint32_t)immediate) & SetNBits(32), 31);
+    state->x[rd] = (int64_t)(int32_t)(state->x[rs1] << (uint32_t)immediate);
 }
 
 void ExecSrliw(State *state, uint32_t instr) {
@@ -1930,7 +2005,7 @@ void ExecCSlli(State *state, uint16_t instr) {
     uint32_t uimm =
         ((instr >> 12 & SetNBits(1)) << 5) | ((instr >> 2 & SetNBits(5)));
 
-    state->x[rd] = (uint64_t)state->x[rd] << (uint64_t)uimm;
+    state->x[rd] = (uint64_t)state->x[rd] << uimm;
 }
 
 void ExecCLwsp(State *state, uint16_t instr) {
@@ -2183,8 +2258,8 @@ void ExecCompressedInstr(State *state, uint16_t instr) {
 }
 
 void ExecEcall(State *state, uint32_t instr) {
-    printf("ecall: Exception: pc: 0x%llx\n", state->pc);
-    printf("ecall: a0: %llx, a1: %llx, a7: %llx\n", state->x[10], state->x[11], state->x[17]);
+    // printf("ecall: Exception: pc: 0x%llx\n", state->pc);
+    // printf("ecall: a0: %llx, a1: %llx, a7: %llx\n", state->x[10], state->x[11], state->x[17]);
     state->excepted = true;
     int exception_code;
     if (state->mode == 0x3) {
@@ -2228,7 +2303,7 @@ void ExecMret(State *state, uint32_t instr) {
 }
 
 void ExecSret(State *state, uint32_t instr) {
-    printf("sret: mode: %d, pc: 0x%llx, sepc: 0x%llx, sstatus: %llx\n", state->mode, state->pc, state->csr[SEPC], state->csr[SSTATUS]);
+    // printf("sret: mode: %d, pc: 0x%llx, sepc: 0x%llx, sstatus: %llx\n", state->mode, state->pc, state->csr[SEPC], state->csr[SSTATUS]);
     if (!Require(state, SUPERVISOR)) {
         return;
     }

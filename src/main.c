@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <curses.h>
 
 void Error(const char *fmt, ...) {
     va_list ap;
@@ -17,7 +18,12 @@ void Error(const char *fmt, ...) {
 
 Uart *NewUart() {
     Uart *uart = calloc(1, sizeof(Uart));
-    uart->uart_mem[5] |= 0x20;
+    WINDOW *w = initscr();
+    cbreak();
+    nodelay(w, true);
+    noecho();
+    scrollok(w, true);
+    uart->lsr |= 0x20;
     return uart;
 }
 
@@ -93,7 +99,7 @@ void CPUMain(State *state, uint64_t start_addr, size_t code_size,
         // printf("pc: %llx\n", state->pc);
         Tick(state);
         if (state->pc == 0) {
-            printf("pc: %llx -> 0, sp: %llx\n", Translate(state, bpc, AccessInstruction), state->x[2]);
+            // printf("pc: %llx -> 0, sp: %llx\n", Translate(state, bpc, AccessInstruction), state->x[2]);
         }
     }
 }
