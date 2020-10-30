@@ -3,6 +3,8 @@
 rve is a RISC-V Emulator written in C which implements RV64IMAC currently and created from scratch.
 `rve` is an abbreviation of "Risc-V Emulator".
 
+![Demo](./demo.gif)
+
 # Build
 
 ```bash
